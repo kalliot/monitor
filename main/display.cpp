@@ -13,18 +13,6 @@ extern "C" {
 // LCD handle
 static LGFX lcd;
 
-// Currently displayed info
-static struct info curr_info = {
-    .wifi = false,
-    .ntp = false,
-    .hours = 255,
-    .minutes = 255,
-    .seconds = 255,
-    .temperature = 0,
-    .humidity = 0,
-    .pressure = 0,
-};
-
 /**
  * Draw masked image.
  * @param font pointer to the image instance to use
@@ -120,66 +108,22 @@ extern "C" void display_init(void)
     lcd.setBrightness(20);
 }
 
-extern "C" void display_redraw(const struct info* info)
+
+extern "C" void display_static_elements(void)
 {
-    const bool first_run = curr_info.hours >= 24;
     const uint32_t main_color = lcd.color888(0xff, 0, 0);
+    const uint32_t clr = lcd.color888(0xa0, 0x00, 0x00);
 
     lcd.startWrite();
+    draw_image(get_image(image_celsius), 50, 250, clr);
+    //draw_image(get_image(image_percent), 155, 250, clr);
+    draw_image(get_image(image_mm), 260, 250, clr);
 
-    // wifi/ntp status
-    if (first_run || curr_info.wifi != info->wifi ||
-        curr_info.ntp != info->ntp) {
-        const struct image* img = NULL;
-        if (!info->wifi) {
-            img = get_image(image_wifi);
-        } else if (!info->ntp) {
-            img = get_image(image_ntp);
-        }
-        if (img) {
-            draw_image(img, DISPLAY_WIDTH / 2 - 10, 0,
-                       lcd.color888(0xff, 0xff, 0));
-        } else {
-            fill(DISPLAY_WIDTH / 2 - 10, 0, 20, 20, lcd.color888(0, 0, 0));
-        }
-    }
-
-    // static elements
-    if (first_run) {
-        const uint32_t clr = lcd.color888(0xa0, 0x00, 0x00);
-        draw_image(get_image(image_celsius), 50, 250, clr);
-        //draw_image(get_image(image_percent), 155, 250, clr);
-        draw_image(get_image(image_mm), 260, 250, clr);
-
-        fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
-        fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
-        fill(100, 230, 5, 5, main_color);  // dot between temperature and humidity
-    }
-
-    // current time
-    /*
-    if (curr_info.hours != info->hours) {
-        draw_number(get_font(font100), 10, 10, main_color, info->hours, 2);
-    }
-    if (curr_info.minutes != info->minutes) {
-        draw_number(get_font(font100), 270, 10, main_color, info->minutes, 2);
-    }
-    draw_number(get_font(font60), 350, 190, main_color, info->seconds, 2);
-    */
-
-    // temperature/humidity/pressure
-
-    /*
-    draw_number(get_font(font28), 40, 200, main_color, info->temperature, 2);
-    draw_number(get_font(font28), 110, 200, main_color, info->humidity, 2);
-    const float pressure_mm = info->pressure;
-    draw_number(get_font(font28), 240, 200, main_color, pressure_mm, 2);
-    */
+    fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
+    fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
+    fill(100, 230, 5, 5, main_color);  // dot between temperature and humidity
     lcd.endWrite();
-
-    curr_info = *info;
 }
-
 
 extern "C" void display_temperature(float temperature)
 {
@@ -210,6 +154,25 @@ extern "C" void display_time(struct ntpTime *time)
     draw_number(get_font(font100), 10, 10, main_color, time->hours, 2);
     draw_number(get_font(font100), 270, 10, main_color, time->minutes, 2);
     draw_number(get_font(font60), 350, 190, main_color, time->seconds, 2);
+    lcd.endWrite();
+}
+
+extern "C" void display_comm(struct commState *state)
+{
+    const struct image* img = NULL;
+
+    lcd.startWrite();
+    if (!state->wifi) {
+        img = get_image(image_wifi);
+    } else if (!state->ntp) {
+        img = get_image(image_ntp);
+    }
+    if (img) {
+        draw_image(img, DISPLAY_WIDTH / 2 - 10, 0,
+                    lcd.color888(0xff, 0xff, 0));
+    } else {
+        fill(DISPLAY_WIDTH / 2 - 10, 0, 20, 20, lcd.color888(0, 0, 0));
+    }
     lcd.endWrite();
 }
 

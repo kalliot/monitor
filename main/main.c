@@ -23,8 +23,9 @@ static const char* log_tag = "monitor";
 // BME280 sensor hadle
 //static bme280_handle_t bme280;
 // Current info to display
-static struct info info;
-QueueHandle_t evt_queue = NULL;
+//static struct info info;
+static struct commState commInfo;
+static QueueHandle_t evt_queue = NULL;
 
 static void log_error_if_nonzero(const char *message, int error_code)
 {
@@ -111,6 +112,17 @@ static bool getJsonFloat(cJSON *js, char *name, float *val)
     return ret;
 }
 
+static void dispComm(struct commState *state)
+{
+    struct measurement meas;
+    meas.id = COMM;
+    meas.data.comm.wifi = state->wifi;
+    meas.data.comm.ntp = state->ntp;
+    meas.data.comm.mqtt = state->mqtt;
+    xQueueSend(evt_queue, &meas, 0);
+}
+
+
 static void dispTime(struct tm *now_local)
 {
     struct measurement meas;
@@ -125,7 +137,6 @@ static void dispTime(struct tm *now_local)
 // Timer callback: called once per second
 static void on_clock_tick(void* arg)
 {
-    float sensor;
     time_t now_utc;
     struct tm now_local;
 
@@ -133,51 +144,15 @@ static void on_clock_tick(void* arg)
     time(&now_utc);
     localtime_r(&now_utc, &now_local);
     dispTime(&now_local);
-
-    info.hours = now_local.tm_hour;
-    info.minutes = now_local.tm_min;
-    info.seconds = now_local.tm_sec;
-
-
-    // BME280 sensor data
-    //info.temperature =
-    //bme280_read_temperature(bme280, &sensor) == ESP_OK ? sensor : 0;
-    //info.humidity =
-    //bme280_read_humidity(bme280, &sensor) == ESP_OK ? sensor : 0;
-    //info.pressure =
-    //bme280_read_pressure(bme280, &sensor) == ESP_OK ? sensor : 0;
-
-    ESP_LOGD(log_tag, "%02d:%02d:%02d t=%.1f h=%.1f p=%.1f", info.hours,
-             info.minutes, info.seconds, info.temperature, info.humidity,
-             info.pressure);
-
-    display_redraw(&info);
 }
 
-// Initialize BME280 sensor
-/*
-static void bme280_init(void)
-{
-    const i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = GPIO_NUM_18,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_io_num = GPIO_NUM_19,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = 100000,
-    };
-    const i2c_bus_handle_t bus = i2c_bus_create(I2C_NUM_0, &conf);
-
-    bme280 = bme280_create(bus, BME280_I2C_ADDRESS_DEFAULT);
-    bme280_default_init(bme280);
-}
-*/
 
 // NTP callback: sync complete
 static void on_time_sync(struct timeval* tv)
 {
     ESP_LOGI(log_tag, "NTP sync completed");
-    info.ntp = true;
+    commInfo.ntp = true;
+    dispComm(&commInfo);
 }
 
 // Initialize Network Time Protocol client
@@ -197,13 +172,15 @@ static void on_net_event(void* arg, esp_event_base_t event_base,
         if (event_id == WIFI_EVENT_STA_START ||
             event_id == WIFI_EVENT_STA_DISCONNECTED) {
             ESP_LOGW(log_tag, "Reconnect WiFi");
-            info.wifi = false;
-            info.ntp = false;
+            commInfo.wifi = false;
+            commInfo.ntp = false;
+            dispComm(&commInfo);
             esp_wifi_connect();
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ESP_LOGI(log_tag, "WiFi connected");
-        info.wifi = true;
+        commInfo.wifi = true;
+        dispComm(&commInfo);
         ntp_init();
     }
 }
@@ -266,7 +243,6 @@ static void dispState(enum indicator state)
     xQueueSend(evt_queue, &meas, 0);
 }
 
-
 static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 {
     cJSON *root = cJSON_Parse(event->data);
@@ -287,12 +263,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 {
                     ESP_LOGI(log_tag,"got some temperature %.2f", val);
                     dispTemperature(val);
-                    info.temperature = val;
-                    int tmp = (int) val;
-
-                    info.humidity = 100 * (val - tmp);
-                    ESP_LOGI(log_tag,"info.temperature %.2f", info.temperature);
-                    ESP_LOGI(log_tag,"info.humidity %.2f", info.humidity);
                 }
             }    
         }
@@ -302,9 +272,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
             if (getJsonInt(root,"value",&val))
             {
                 dispLevel(val);
-                ESP_LOGI(log_tag,"got level %d", val);
-                info.pressure = (float) val;
-                ESP_LOGI(log_tag,"info.pressure %.1f", info.pressure);
             }    
         }
 
@@ -316,7 +283,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
             if (!state)
             {
                 dispState(INDICATOR_OFF);
-                //display_indicator(INDICATOR_OFF);
             }
             else
             {
@@ -325,12 +291,10 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     ESP_LOGI(log_tag,"got power %.2f", power);
                     if (power > 10.0)
                     {
-                        //display_indicator(INDICATOR_CONNECTED);
                         dispState(INDICATOR_CONNECTED);
                     }
                     else
                     {
-                        //display_indicator(INDICATOR_ON);
                         dispState(INDICATOR_ON);
                     }
                 }
@@ -370,10 +334,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
             msg_id = esp_mqtt_client_subscribe(client, "home/kallio/relay/0/shellyplus1pm/state" , 0);
             ESP_LOGI(log_tag, "sent subscribe relay succesful, msg_id=%d", msg_id);
+            commInfo.mqtt = true;
+            dispComm(&commInfo);
         break;
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(log_tag, "MQTT_EVENT_DISCONNECTED");
+        commInfo.mqtt = false;
+        dispComm(&commInfo);
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
@@ -468,6 +436,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_timer_start_periodic(ptimer_handle, 5000000)); // 5 sec
 
     ESP_LOGI(log_tag, "Initialization completed");
+    display_static_elements();
 
     while (1)
     {
@@ -477,6 +446,8 @@ void app_main(void)
         {
             switch (meas.id) {
                 case COMM:
+                    ESP_LOGI(log_tag, "Received commstate %d/%d/%d", meas.data.comm.wifi, meas.data.comm.ntp, meas.data.comm.mqtt);
+                    display_comm(&meas.data.comm);
                 break;
 
                 case TEMPERATURE:
@@ -495,7 +466,6 @@ void app_main(void)
                 break;
     
                 case TIME:
-                    ESP_LOGI(log_tag, "Received time from queue %d %d %d", meas.data.time.hours, meas.data.time.minutes, meas.data.time.seconds);
                     display_time(&meas.data.time);
                 break;
             }    

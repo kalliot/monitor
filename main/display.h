@@ -84,3 +84,5 @@ void display_indicator(enum indicator state);
 void display_temperature(float temperature);
 void display_level(unsigned long level);
 void display_time(struct ntpTime *time);
+void display_comm(struct commState *state);
+void display_static_elements(void);
