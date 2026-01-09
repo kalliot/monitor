@@ -1,0 +1,9 @@
+/dependencies.lock
+/managed_components
+/sdkconfig
+/build
+/components
+
+# LSP
+/compile_commands.json
+/.cache
