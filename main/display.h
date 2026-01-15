@@ -23,6 +23,9 @@ enum meastype
     TEMPERATURE,
     LEVEL,
     CARHEATER,
+    OILBURNER,
+    DOOR,
+    FLOOD,
     TIME
 };
 
@@ -80,7 +83,7 @@ void display_init(void);
  * @param info values to display
  */
 void display_redraw(const struct info* info);
-void display_indicator(enum indicator state);
+void display_indicator(enum indicator state, int index);
 void display_temperature(float temperature);
 void display_level(unsigned long level);
 void display_time(struct ntpTime *time);

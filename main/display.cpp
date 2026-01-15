@@ -8,6 +8,8 @@ extern "C" {
 }
 
 #define LGFX_WT32_SC01
+#define SIZE_INDICATOR 20
+
 #include <LGFX_AUTODETECT.hpp>
 
 // LCD handle
@@ -117,7 +119,7 @@ extern "C" void display_static_elements(void)
     lcd.startWrite();
     draw_image(get_image(image_celsius), 50, 250, clr);
     //draw_image(get_image(image_percent), 155, 250, clr);
-    draw_image(get_image(image_mm), 260, 250, clr);
+    draw_image(get_image(image_mm), 240, 250, clr);
 
     fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
     fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
@@ -142,7 +144,7 @@ extern "C" void display_level(unsigned long level)
     const uint32_t main_color = lcd.color888(0xff, 0, 0);
 
     lcd.startWrite();
-    draw_number(get_font(font28), 240, 200, main_color, level, 2);
+    draw_number(get_font(font28), 180, 200, main_color, level, 3);
     lcd.endWrite();
 }   
 
@@ -176,7 +178,7 @@ extern "C" void display_comm(struct commState *state)
     lcd.endWrite();
 }
 
-extern "C" void display_indicator(enum indicator state)
+extern "C" void display_indicator(enum indicator state, int index)
 {
     const uint32_t connected_color  = lcd.color888(0xff, 0x0b, 0x0b);
     const uint32_t off_color = lcd.color888(0x0b, 0x0b, 0xff);
@@ -198,6 +200,6 @@ extern "C" void display_indicator(enum indicator state)
             break;
     }
     lcd.startWrite();
-    fill(0,DISPLAY_HEIGHT - 20, 20, 20, color);        
+    fill(index * SIZE_INDICATOR,DISPLAY_HEIGHT - SIZE_INDICATOR, SIZE_INDICATOR, SIZE_INDICATOR, color);
     lcd.endWrite();
 }

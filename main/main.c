@@ -14,9 +14,15 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_event.h"
-#include <i2c_bus.h>
+//#include <i2c_bus.h>
 #include <nvs_flash.h>
 #include "mqtt_client.h"
+#include "memory.h"
+
+#define INDEX_CARHEATER 0
+#define INDEX_OILBURNER 1
+#define INDEX_DOOR      2
+#define INDEX_FLOOD     3
 
 // Log tag
 static const char* log_tag = "monitor";
@@ -26,6 +32,8 @@ static const char* log_tag = "monitor";
 //static struct info info;
 static struct commState commInfo;
 static QueueHandle_t evt_queue = NULL;
+
+
 
 static void log_error_if_nonzero(const char *message, int error_code)
 {
@@ -235,75 +243,187 @@ static void dispLevel(int level)
     xQueueSend(evt_queue, &meas, 0);
 }
 
-static void dispState(enum indicator state)
+static void dispState(enum indicator state, enum meastype id)
 {
     struct measurement meas;
-    meas.id = CARHEATER;
+    meas.id = id;
     meas.data.indic = state;
     xQueueSend(evt_queue, &meas, 0);
+}
+
+char const * const hometopic   = "home/kallio";
+const char * const zigbeetopic = "zigbee2mqtt";
+
+
+struct messageId {
+    char const * const baseTopic;
+    const char * const subTopic;
+    const char *id;
+    const int num;
+};
+
+struct messageId messageIds[] = {
+    {hometopic,      NULL,               "thermostat",       0},
+    {hometopic,      NULL,               "temperature",      1},
+    {hometopic,      NULL,               "relay",            2},
+    {zigbeetopic,   "store_door",        NULL,               3},
+    {zigbeetopic,   "boiler_door",       NULL,               4},
+    {zigbeetopic,   "balkong_door",      NULL,               5},
+    {zigbeetopic,   "kitchen_trash",     NULL,               6},
+    {zigbeetopic,   "lattia",            NULL,               7},
+    {NULL,NULL,NULL,-1}
+};
+
+
+static int resolveWhichMessage(esp_mqtt_event_handle_t event, cJSON *cjson)
+{
+    if (event->topic == NULL) return -1;
+
+    int len;
+    char id[20];
+    char zigbee[30];
+
+    for (int i=0; messageIds[i].baseTopic != NULL; i++)
+    {
+        if (messageIds[i].subTopic == NULL)
+        {
+            if (!memcmp(event->topic,messageIds[i].baseTopic,strlen(messageIds[i].baseTopic)))
+            {
+                strcpy(id,getJsonStr(cjson,"id"));
+                if (!strcmp(id,messageIds[i].id))
+                {
+                    return messageIds[i].num;
+                }
+            }
+        }
+        else
+        {
+            len = sprintf(zigbee,"%s/%s",messageIds[i].baseTopic, messageIds[i].subTopic);
+            if (!memcmp(event->topic, zigbee, len))
+            {
+                return messageIds[i].num;
+            }
+        }
+    }
+    return -1;
 }
 
 static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 {
     cJSON *root = cJSON_Parse(event->data);
-    char id[20];
     time_t now;
 
     time(&now);
     if (root != NULL)
     {
-        strcpy(id,getJsonStr(root,"id"));
-
-        if (!strcmp(id,"temperature"))
+        switch (resolveWhichMessage(event, root))
         {
-            if (!strcmp(getJsonStr(root,"sensor"),"ntc"))
-            {
-                float val=0;
-                if (getJsonFloat(root,"value",&val))
+            case 0:
                 {
-                    ESP_LOGI(log_tag,"got some temperature %.2f", val);
-                    dispTemperature(val);
-                }
-            }    
-        }
-        if (!strcmp(id,"thermostat"))
-        {
-            int val=0;
-            if (getJsonInt(root,"value",&val))
-            {
-                dispLevel(val);
-            }    
-        }
-
-        if (!strcmp(id,"relay"))
-        {
-            float power=-1.0;
-            bool state = getJsonState(root,"state");
-
-            if (!state)
-            {
-                dispState(INDICATOR_OFF);
-            }
-            else
-            {
-                if (getJsonFloat(root,"power",&power))
-                {
-                    ESP_LOGI(log_tag,"got power %.2f", power);
-                    if (power > 10.0)
+                    int val=-1;
+                    if (getJsonInt(root,"value",&val))
                     {
-                        dispState(INDICATOR_CONNECTED);
-                    }
-                    else
-                    {
-                        dispState(INDICATOR_ON);
+                        dispLevel(val);
                     }
                 }
-            }
-            
+                break;
+
+            case 1:
+                if (!strcmp(getJsonStr(root,"sensor"),"ntc"))
+                {
+                    float val=0;
+                    if (getJsonFloat(root,"value",&val))
+                    {
+                        ESP_LOGI(log_tag,"got some temperature %.2f", val);
+                        dispTemperature(val);
+                    }
+                }
+                break;
+
+            case 2:
+                {
+                    char device[20];
+                    float power=-1.0;
+                    bool state = getJsonState(root,"state");
+                    int contact = -1;
+
+                    getJsonInt(root,"contact", &contact);
+                    strcpy(device,getJsonStr(root,"device"));
+                    ESP_LOGI(log_tag, "Relay %s contact %d state %d", device, contact, state);
+                    if (!strcmp(device, "shellyplus1pm"))
+                    {
+                        if (!state)
+                        {
+                            dispState(INDICATOR_OFF, CARHEATER);
+                        }
+                        else
+                        {
+                            if (getJsonFloat(root,"power",&power))
+                            {
+                                ESP_LOGI(log_tag,"got power %.2f", power);
+                                if (power > 10.0)
+                                {
+                                    dispState(INDICATOR_CONNECTED, CARHEATER);
+                                }
+                                else
+                                {
+                                    dispState(INDICATOR_ON, CARHEATER);
+                                }
+                            }
+                        }
+                    }
+                    if (!strcmp(device,"shelly1"))
+                    {
+                        switch (contact)
+                        {
+                            case 0:
+                            break;
+
+                            case 1:
+                            break;
+
+                            case 2:
+                            break;
+
+                            case 3:
+                                if (!state)  dispState(INDICATOR_OFF, OILBURNER);
+                                else dispState(INDICATOR_CONNECTED, OILBURNER);
+                            break;
+                        }
+                    }
+                }
+                break;
+
+
+            case 3:
+            case 4:
+            case 5:
+                if (getJsonState(root,"contact")) dispState(INDICATOR_OFF, DOOR);
+                else dispState(INDICATOR_ON, DOOR);
+                break;
+
+            case 6:
+            case 7:
+                if (getJsonState(root,"water_leak")) dispState(INDICATOR_ON, FLOOD);
+                else dispState(INDICATOR_OFF, FLOOD);
+                break;
+
+            default:
+                break;
         }
         cJSON_Delete(root);
     }
     return 0;
+}
+
+
+
+int subscribeTopic(esp_mqtt_client_handle_t client, const char *prefix, char *topic)
+{
+    char name[80];
+
+    sprintf(name,"%s/%s", prefix, topic);
+    return esp_mqtt_client_subscribe(client, name , 0);
 }
 
 /*
@@ -316,31 +436,28 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
  * @param event_id The id for the received event.
  * @param event_data The data for the event, esp_mqtt_event_handle_t.
  */
+
+
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     ESP_LOGD(log_tag, "Event dispatched from event loop base=%s, event_id=%ld", base, event_id);
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
 
-    int msg_id;
-
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
             ESP_LOGI(log_tag, "MQTT_EVENT_CONNECTED");
-            ESP_LOGI(log_tag,"subscribing topics");
-
-            msg_id = esp_mqtt_client_subscribe(client, "home/kallio/thermostat/+/parameters/#" , 0);
-            ESP_LOGI(log_tag, "sent subscribe thermostat succesful, msg_id=%d", msg_id);
-
-            msg_id = esp_mqtt_client_subscribe(client, "home/kallio/relay/0/shellyplus1pm/state" , 0);
-            ESP_LOGI(log_tag, "sent subscribe relay succesful, msg_id=%d", msg_id);
+            subscribeTopic(client, hometopic, "thermostat/+/parameters/#");
+            subscribeTopic(client, hometopic, "relay/0/shellyplus1pm/state");
+            subscribeTopic(client, hometopic, "relay/+/shelly1/state");
+            subscribeTopic(client, zigbeetopic, "#");
             commInfo.mqtt = true;
             dispComm(&commInfo);
         break;
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(log_tag, "MQTT_EVENT_DISCONNECTED");
-        commInfo.mqtt = false;
+        commInfo.mqtt = false; // TODO: mqtt does not yet have any indicator.
         dispComm(&commInfo);
         break;
 
@@ -357,7 +474,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     case MQTT_EVENT_DATA:
         {
-            uint16_t flags = handleJson(event, (uint8_t *) handler_args);
+            uint16_t flags = handleJson(event, handler_args);
         }
         break;
 
@@ -429,14 +546,24 @@ void app_main(void)
     display_init();
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init();
+
     evt_queue = xQueueCreate(10, sizeof(struct measurement));
+
+    display_static_elements();
+    dispLevel(0);
+    dispTemperature(0);
+    dispState(INDICATOR_OFF, CARHEATER);
+    dispState(INDICATOR_OFF, OILBURNER);
+    dispState(INDICATOR_OFF, DOOR);
+    dispState(INDICATOR_OFF, FLOOD);
+    on_clock_tick(chipid); // chipid is not used.
+
     esp_mqtt_client_handle_t client = mqtt_app_start(chipid);
     // register periodic timer
     ESP_ERROR_CHECK(esp_timer_create(&ptimer_args, &ptimer_handle));
     ESP_ERROR_CHECK(esp_timer_start_periodic(ptimer_handle, 5000000)); // 5 sec
 
     ESP_LOGI(log_tag, "Initialization completed");
-    display_static_elements();
 
     while (1)
     {
@@ -451,20 +578,35 @@ void app_main(void)
                 break;
 
                 case TEMPERATURE:
-                    ESP_LOGI(log_tag, "Received temperature from queue %.2f", meas.data.heater.temperature);
+                    ESP_LOGI(log_tag, "Received temperature %.2f", meas.data.heater.temperature);
                     display_temperature(meas.data.heater.temperature);
                 break;
 
                 case LEVEL:
-                    ESP_LOGI(log_tag, "Received level from queue %d", meas.data.heater.level);
-                    display_level(meas.data.heater.level);
+                    ESP_LOGI(log_tag, "Received level %d", meas.data.heater.level);
+                    display_level(meas.data.heater.level * 20);
                 break;
 
                 case CARHEATER:
-                    ESP_LOGI(log_tag, "Received indicator from queue %d", meas.data.indic);
-                    display_indicator(meas.data.indic);
+                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
+                    display_indicator(meas.data.indic, INDEX_CARHEATER);
                 break;
-    
+
+                case OILBURNER:
+                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
+                    display_indicator(meas.data.indic, INDEX_OILBURNER);
+                break;
+
+                case DOOR:
+                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
+                    display_indicator(meas.data.indic, INDEX_DOOR);
+                break;
+
+                case FLOOD:
+                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
+                    display_indicator(meas.data.indic, INDEX_FLOOD);
+                break;
+
                 case TIME:
                     display_time(&meas.data.time);
                 break;
