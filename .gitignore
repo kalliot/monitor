@@ -2,6 +2,7 @@
 /managed_components
 /sdkconfig
 /build
+/main/build
 /components
 
 # LSP
