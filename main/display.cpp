@@ -113,49 +113,81 @@ extern "C" void display_init(void)
 
 extern "C" void display_static_elements(void)
 {
-    const uint32_t main_color = lcd.color888(0xff, 0, 0);
+    const uint32_t main_color = lcd.color888(100, 219, 255);
     const uint32_t clr = lcd.color888(0xa0, 0x00, 0x00);
 
     lcd.startWrite();
-    draw_image(get_image(image_celsius), 50, 250, clr);
+    //draw_image(get_image(image_celsius), 50, 250, clr);
     //draw_image(get_image(image_percent), 155, 250, clr);
-    draw_image(get_image(image_mm), 240, 250, clr);
+    //draw_image(get_image(image_mm), 240, 250, clr);
 
     fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
     fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
-    fill(100, 230, 5, 5, main_color);  // dot between temperature and humidity
+    fill(70, 210, 5, 5, main_color);   // dot between temperature full and remain
+    fill(70, 260, 5, 5, main_color);  // price full and remain.
+    lcd.endWrite();
+}
+
+extern "C" void display_price(struct Price *price)
+{
+    uint32_t color;
+    unsigned long whole = (unsigned long) price->euros;
+    unsigned long fract = 100 * (price->euros - whole);
+
+    switch (price->level)
+    {
+        case low:
+            color = lcd.color888(100, 255, 100);
+            break;
+
+        case normal:
+            color = lcd.color888(100, 219, 255);
+            break;
+
+        case high:
+            color = lcd.color888(255, 100, 100);
+            break;
+
+        default:
+            color = lcd.color888(100, 219, 255);
+            break;
+    }
+
+    lcd.startWrite();
+    draw_number(get_font(font28), 10, 230, color, whole, 2);
+    draw_number(get_font(font28), 80, 230, color, fract, 2);
     lcd.endWrite();
 }
 
 extern "C" void display_temperature(float temperature)
 {
-    const uint32_t main_color = lcd.color888(0xff, 0, 0);
+    const uint32_t main_color = lcd.color888(100, 219, 255);
     unsigned long whole = (unsigned long) temperature;
     unsigned long fract = 100 * (temperature - whole);
 
     lcd.startWrite();
-    draw_number(get_font(font28), 40, 200, main_color, whole, 2);
-    draw_number(get_font(font28), 110, 200, main_color, fract, 2);
+    draw_number(get_font(font28), 10, 180, main_color, whole, 2);
+    draw_number(get_font(font28), 80, 180, main_color, fract, 2);
     lcd.endWrite();
 }   
 
 extern "C" void display_level(unsigned long level)
 {
-    const uint32_t main_color = lcd.color888(0xff, 0, 0);
+    const uint32_t main_color = lcd.color888(100, 219, 255);
 
     lcd.startWrite();
-    draw_number(get_font(font28), 180, 200, main_color, level, 3);
+    draw_number(get_font(font28), 160, 180, main_color, level, 3);
     lcd.endWrite();
 }   
 
 extern "C" void display_time(struct ntpTime *time)
 {
-    const uint32_t main_color = lcd.color888(0xff, 0, 0);
+    const uint32_t main_color = lcd.color888(100, 219, 255);
 
     lcd.startWrite();
     draw_number(get_font(font100), 10, 10, main_color, time->hours, 2);
     draw_number(get_font(font100), 270, 10, main_color, time->minutes, 2);
-    draw_number(get_font(font60), 350, 190, main_color, time->seconds, 2);
+    //draw_number(get_font(font60), 350, 190, main_color, time->seconds, 2);
     lcd.endWrite();
 }
 

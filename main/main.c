@@ -19,10 +19,22 @@
 #include "mqtt_client.h"
 #include "memory.h"
 
-#define INDEX_CARHEATER 0
-#define INDEX_OILBURNER 1
-#define INDEX_DOOR      2
-#define INDEX_FLOOD     3
+#define INDEX_CARHEATER     0
+#define INDEX_DOOR          1
+#define INDEX_FLOOD         2
+#define INDEX_OILBURNER     3
+#define INDEX_STOCKHEATER   4
+#define INDEX_SOLHEATER     5
+
+#define FLOODFLAG_TRASH     1
+#define FLOODFLAG_LATTIA    2
+#define FLOODFLAG_TISKIKONE 4
+
+#define DOORFLAG_STORE     1
+#define DOORFLAG_BOILER    2
+#define DOORFLAG_BALKONG   4
+#define DOORFLAG_FRONT     8
+
 
 // Log tag
 static const char* log_tag = "monitor";
@@ -142,7 +154,7 @@ static void dispTime(struct tm *now_local)
 }
 
 
-// Timer callback: called once per second
+// Timer callback: called once per 5 second
 static void on_clock_tick(void* arg)
 {
     time_t now_utc;
@@ -227,6 +239,15 @@ static void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
+static void dispPrice(float price, int level)
+{
+    struct measurement meas;
+    meas.id = PRICE;
+    meas.data.price.euros = price;
+    meas.data.price.level = level;
+    xQueueSend(evt_queue, &meas, 0);
+}
+
 static void dispTemperature(float temperature)
 {
     struct measurement meas;
@@ -266,11 +287,14 @@ struct messageId messageIds[] = {
     {hometopic,      NULL,               "thermostat",       0},
     {hometopic,      NULL,               "temperature",      1},
     {hometopic,      NULL,               "relay",            2},
+    {hometopic,      NULL,               "elprice",          9},    
     {zigbeetopic,   "store_door",        NULL,               3},
     {zigbeetopic,   "boiler_door",       NULL,               4},
     {zigbeetopic,   "balkong_door",      NULL,               5},
+    {zigbeetopic,   "front_door",        NULL,               10},
     {zigbeetopic,   "kitchen_trash",     NULL,               6},
     {zigbeetopic,   "lattia",            NULL,               7},
+    {zigbeetopic,   "tiskikone",         NULL,               8},
     {NULL,NULL,NULL,-1}
 };
 
@@ -282,7 +306,7 @@ static int resolveWhichMessage(esp_mqtt_event_handle_t event, cJSON *cjson)
     int len;
     char id[20];
     char zigbee[30];
-
+    
     for (int i=0; messageIds[i].baseTopic != NULL; i++)
     {
         if (messageIds[i].subTopic == NULL)
@@ -301,6 +325,7 @@ static int resolveWhichMessage(esp_mqtt_event_handle_t event, cJSON *cjson)
             len = sprintf(zigbee,"%s/%s",messageIds[i].baseTopic, messageIds[i].subTopic);
             if (!memcmp(event->topic, zigbee, len))
             {
+                ESP_LOGI(log_tag, "%s changed", zigbee);
                 return messageIds[i].num;
             }
         }
@@ -312,6 +337,9 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 {
     cJSON *root = cJSON_Parse(event->data);
     time_t now;
+    bool flagsChanged=false;
+    static int floodFlag = 0x0;
+    static int doorFlag  = 0x0;
 
     time(&now);
     if (root != NULL)
@@ -376,13 +404,18 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     {
                         switch (contact)
                         {
-                            case 0:
+                            case 0: // solarheater
+                                if (!state) dispState(INDICATOR_OFF, SOLHEAT);
+                                else dispState(INDICATOR_CONNECTED, SOLHEAT);
                             break;
 
                             case 1:
                             break;
 
-                            case 2:
+                            case 2: // stockheater
+                                if (!state) dispState(INDICATOR_OFF, STOCKHEAT);
+                                else dispState(INDICATOR_CONNECTED, STOCKHEAT);
+
                             break;
 
                             case 3:
@@ -396,20 +429,92 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
 
             case 3:
+                flagsChanged = true;
+                if (!getJsonState(root,"contact"))
+                    doorFlag |= DOORFLAG_STORE;
+                else
+                    doorFlag &= ~DOORFLAG_STORE;
+                break;
+
             case 4:
+                flagsChanged = true;
+                if (!getJsonState(root,"contact"))
+                    doorFlag |= DOORFLAG_BOILER;
+                else
+                    doorFlag &= ~DOORFLAG_BOILER;
+                break;
+
             case 5:
-                if (getJsonState(root,"contact")) dispState(INDICATOR_OFF, DOOR);
-                else dispState(INDICATOR_ON, DOOR);
+                flagsChanged = true;
+                if (!getJsonState(root,"contact"))
+                    doorFlag |= DOORFLAG_BALKONG;
+                else
+                    doorFlag &= ~DOORFLAG_BALKONG;
                 break;
 
             case 6:
+                flagsChanged = true;
+                if (getJsonState(root,"water_leak"))
+                    floodFlag |= FLOODFLAG_TRASH;
+                else
+                    floodFlag &= ~FLOODFLAG_TRASH;
+                break;
+
             case 7:
-                if (getJsonState(root,"water_leak")) dispState(INDICATOR_ON, FLOOD);
-                else dispState(INDICATOR_OFF, FLOOD);
+                flagsChanged = true;
+                if (getJsonState(root,"water_leak"))
+                    floodFlag |= FLOODFLAG_LATTIA;
+                else
+                    floodFlag &= ~FLOODFLAG_LATTIA;
+
+                break;
+
+            case 8:
+                flagsChanged = true;
+                if (getJsonState(root,"water_leak"))
+                    floodFlag |= FLOODFLAG_TISKIKONE;
+                else
+                    floodFlag &= ~FLOODFLAG_TISKIKONE;
+
+                break;
+
+            case 9:
+                {
+                    float val = 0.0;
+                    enum pricelevel level;
+                    char stateStr[10];
+
+                    strcpy(stateStr,getJsonStr(root,"pricestate"));
+                    if (!strcmp(stateStr,"low")) level = low;
+                    else if (!strcmp(stateStr,"high")) level = high;
+                    else level = normal;
+                    ESP_LOGI(log_tag, "El price state is %s, level=%d", stateStr, level);
+                    if (getJsonFloat(root,"price",&val))
+                    {
+                        dispPrice(val,level);
+                    }
+                }
+                break;
+
+            case 10:
+                flagsChanged = true;
+                if (!getJsonState(root,"contact"))
+                    doorFlag |= DOORFLAG_FRONT;
+                else
+                    doorFlag &= ~DOORFLAG_FRONT;
                 break;
 
             default:
                 break;
+        }
+        if (flagsChanged)
+        {
+            ESP_LOGI(log_tag, "dispState refresh flood %d, door %d", floodFlag, doorFlag);
+            if (floodFlag) dispState(INDICATOR_ON, FLOOD);
+            else dispState(INDICATOR_OFF, FLOOD);
+
+            if (doorFlag) dispState(INDICATOR_ON, DOOR);
+            else dispState(INDICATOR_OFF, DOOR);
         }
         cJSON_Delete(root);
     }
@@ -450,6 +555,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             subscribeTopic(client, hometopic, "thermostat/+/parameters/#");
             subscribeTopic(client, hometopic, "relay/0/shellyplus1pm/state");
             subscribeTopic(client, hometopic, "relay/+/shelly1/state");
+            subscribeTopic(client, hometopic, "elprice/currentquart");
             subscribeTopic(client, zigbeetopic, "#");
             commInfo.mqtt = true;
             dispComm(&commInfo);
@@ -547,13 +653,16 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init();
 
-    evt_queue = xQueueCreate(10, sizeof(struct measurement));
+    evt_queue = xQueueCreate(15, sizeof(struct measurement));
 
     display_static_elements();
     dispLevel(0);
     dispTemperature(0);
+    dispPrice(0,normal);
     dispState(INDICATOR_OFF, CARHEATER);
     dispState(INDICATOR_OFF, OILBURNER);
+    dispState(INDICATOR_OFF, STOCKHEAT);
+    dispState(INDICATOR_OFF, SOLHEAT);
     dispState(INDICATOR_OFF, DOOR);
     dispState(INDICATOR_OFF, FLOOD);
     on_clock_tick(chipid); // chipid is not used.
@@ -573,43 +682,51 @@ void app_main(void)
         {
             switch (meas.id) {
                 case COMM:
-                    ESP_LOGI(log_tag, "Received commstate %d/%d/%d", meas.data.comm.wifi, meas.data.comm.ntp, meas.data.comm.mqtt);
                     display_comm(&meas.data.comm);
                 break;
 
                 case TEMPERATURE:
-                    ESP_LOGI(log_tag, "Received temperature %.2f", meas.data.heater.temperature);
                     display_temperature(meas.data.heater.temperature);
                 break;
 
                 case LEVEL:
-                    ESP_LOGI(log_tag, "Received level %d", meas.data.heater.level);
                     display_level(meas.data.heater.level * 20);
                 break;
 
                 case CARHEATER:
-                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
                     display_indicator(meas.data.indic, INDEX_CARHEATER);
                 break;
 
                 case OILBURNER:
-                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
                     display_indicator(meas.data.indic, INDEX_OILBURNER);
+                break;
+
+                case STOCKHEAT:
+                    display_indicator(meas.data.indic, INDEX_STOCKHEATER );
+                break;
+
+                case SOLHEAT:
+                    display_indicator(meas.data.indic, INDEX_SOLHEATER );
                 break;
 
                 case DOOR:
                     ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
-                    display_indicator(meas.data.indic, INDEX_DOOR);
+                    display_indicator(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, INDEX_DOOR);
                 break;
 
                 case FLOOD:
                     ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
-                    display_indicator(meas.data.indic, INDEX_FLOOD);
+                    display_indicator(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, INDEX_FLOOD);
                 break;
 
                 case TIME:
                     display_time(&meas.data.time);
                 break;
+
+                case PRICE:
+                    display_price(&meas.data.price);
+                break;
+
             }    
         }
         else

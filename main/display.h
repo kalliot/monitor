@@ -17,6 +17,12 @@ enum indicator {
     INDICATOR_CONNECTED
 };
 
+enum pricelevel {
+    low,
+    normal,
+    high
+};
+
 enum meastype
 {
     COMM,
@@ -24,15 +30,23 @@ enum meastype
     LEVEL,
     CARHEATER,
     OILBURNER,
+    STOCKHEAT,
+    SOLHEAT,
     DOOR,
     FLOOD,
-    TIME
+    TIME,
+    PRICE
 };
 
 struct commState {
     bool wifi;
     bool ntp;
     bool mqtt;
+};
+
+struct Price {
+    enum pricelevel level; 
+    float euros; // euros with tax
 };
 
 struct ntpTime {
@@ -53,6 +67,7 @@ struct measurement {
         struct commState comm;
         struct Heater heater;
         struct ntpTime time;
+        struct Price price;
         enum indicator indic;
     } data;
 };
@@ -85,6 +100,7 @@ void display_init(void);
 void display_redraw(const struct info* info);
 void display_indicator(enum indicator state, int index);
 void display_temperature(float temperature);
+void display_price(struct Price *price);
 void display_level(unsigned long level);
 void display_time(struct ntpTime *time);
 void display_comm(struct commState *state);
