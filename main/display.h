@@ -35,7 +35,8 @@ enum meastype
     DOOR,
     FLOOD,
     TIME,
-    PRICE
+    PRICE,
+    AVGPRICE
 };
 
 struct commState {
@@ -99,8 +100,9 @@ void display_init(void);
  */
 void display_redraw(const struct info* info);
 void display_indicator(enum indicator state, int index);
+void display_indicatoramount(int amount);
 void display_temperature(float temperature);
-void display_price(struct Price *price);
+void display_price(struct Price *price, int x, int y);
 void display_level(unsigned long level);
 void display_time(struct ntpTime *time);
 void display_comm(struct commState *state);

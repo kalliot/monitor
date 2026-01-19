@@ -11,6 +11,7 @@
 #include "img/ntp.xbm"
 #include "img/percent.xbm"
 #include "img/wifi.xbm"
+#include "img/mqtt.xbm"
 
 #define XBM_STRIDE(w) (((w + 7) / 8) * 8)
 
@@ -47,6 +48,12 @@ static const struct image images[] = {
         .height = wifi_height,
         .stride = XBM_STRIDE(wifi_width),
         .mask = wifi_bits,
+    },
+    [image_mqtt] = {
+        .width = mqtt_width,
+        .height = mqtt_height,
+        .stride = XBM_STRIDE(mqtt_width),
+        .mask = mqtt_bits,
     },
     [image_ntp] = {
         .width = ntp_width,

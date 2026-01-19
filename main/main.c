@@ -75,9 +75,8 @@ static bool getJsonState(cJSON *js, char *name)
     cJSON *item = cJSON_GetObjectItem(js, name);
     if (item != NULL)
     {
-        ESP_LOGI(log_tag,"%s found from json, type=%d", name, item->type);
         if (item->type == 2)
-        //if (cJSON_IsTrue(item))
+        //if (cJSON_IsTrue(item)) bug in library
         {
             return true;
         }
@@ -101,7 +100,6 @@ static bool getJsonInt(cJSON *js, char *name, int *val)
                 ret = true;
                 *val = item->valueint;
             }
-            else ESP_LOGI(log_tag,"%s is not changed", name);
         }
         else ESP_LOGI(log_tag,"%s is not a number", name);
     }
@@ -122,9 +120,7 @@ static bool getJsonFloat(cJSON *js, char *name, float *val)
             {
                 ret = true;
                 *val = item->valuedouble;
-                ESP_LOGI(log_tag,"received variable %s:%2.2f", name, item->valuedouble);
             }
-            ESP_LOGI(log_tag,"%s is not changed", name);
         }
         else ESP_LOGI(log_tag,"%s is not a number", name);
     }
@@ -242,15 +238,27 @@ static void wifi_init(void)
 static void dispPrice(float price, int level)
 {
     struct measurement meas;
+
     meas.id = PRICE;
     meas.data.price.euros = price;
     meas.data.price.level = level;
     xQueueSend(evt_queue, &meas, 0);
 }
 
+static void dispAvgPrice(float price)
+{
+    struct measurement meas;
+
+    meas.id = AVGPRICE;
+    meas.data.price.euros = price;
+    meas.data.price.level = normal;
+    xQueueSend(evt_queue, &meas, 0);
+}
+
 static void dispTemperature(float temperature)
 {
     struct measurement meas;
+
     meas.id = TEMPERATURE;
     meas.data.heater.temperature = temperature;
     xQueueSend(evt_queue, &meas, 0);
@@ -259,6 +267,7 @@ static void dispTemperature(float temperature)
 static void dispLevel(int level)
 {
     struct measurement meas;
+
     meas.id = LEVEL;
     meas.data.heater.level = level;
     xQueueSend(evt_queue, &meas, 0);
@@ -267,6 +276,7 @@ static void dispLevel(int level)
 static void dispState(enum indicator state, enum meastype id)
 {
     struct measurement meas;
+
     meas.id = id;
     meas.data.indic = state;
     xQueueSend(evt_queue, &meas, 0);
@@ -288,6 +298,7 @@ struct messageId messageIds[] = {
     {hometopic,      NULL,               "temperature",      1},
     {hometopic,      NULL,               "relay",            2},
     {hometopic,      NULL,               "elprice",          9},    
+    {hometopic,      NULL,               "daystats",         11},
     {zigbeetopic,   "store_door",        NULL,               3},
     {zigbeetopic,   "boiler_door",       NULL,               4},
     {zigbeetopic,   "balkong_door",      NULL,               5},
@@ -333,11 +344,22 @@ static int resolveWhichMessage(esp_mqtt_event_handle_t event, cJSON *cjson)
     return -1;
 }
 
+static int todayNum(void)
+{
+    time_t now_utc;
+    struct tm now_local;
+
+    time(&now_utc);
+    localtime_r(&now_utc, &now_local);
+    return now_local.tm_wday;
+}
+
 static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 {
     cJSON *root = cJSON_Parse(event->data);
     time_t now;
     bool flagsChanged=false;
+    static float avgDayPrice = -10;
     static int floodFlag = 0x0;
     static int doorFlag  = 0x0;
 
@@ -377,7 +399,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
                     getJsonInt(root,"contact", &contact);
                     strcpy(device,getJsonStr(root,"device"));
-                    ESP_LOGI(log_tag, "Relay %s contact %d state %d", device, contact, state);
                     if (!strcmp(device, "shellyplus1pm"))
                     {
                         if (!state)
@@ -488,7 +509,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     if (!strcmp(stateStr,"low")) level = low;
                     else if (!strcmp(stateStr,"high")) level = high;
                     else level = normal;
-                    ESP_LOGI(log_tag, "El price state is %s, level=%d", stateStr, level);
                     if (getJsonFloat(root,"price",&val))
                     {
                         dispPrice(val,level);
@@ -504,12 +524,25 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     doorFlag &= ~DOORFLAG_FRONT;
                 break;
 
+            case 11:
+                {
+                    int today = -1;
+                    if (getJsonInt(root, "weekday",&today) && today == todayNum())
+                    {
+                        if (getJsonFloat(root,"avg",&avgDayPrice))
+                        {
+                            ESP_LOGI(log_tag, "--> Electricity daystats for day %d, avg %.2f", today, avgDayPrice);
+                            dispAvgPrice(avgDayPrice);
+                        }
+                    }
+                }
+                break;
+
             default:
                 break;
         }
         if (flagsChanged)
         {
-            ESP_LOGI(log_tag, "dispState refresh flood %d, door %d", floodFlag, doorFlag);
             if (floodFlag) dispState(INDICATOR_ON, FLOOD);
             else dispState(INDICATOR_OFF, FLOOD);
 
@@ -556,6 +589,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             subscribeTopic(client, hometopic, "relay/0/shellyplus1pm/state");
             subscribeTopic(client, hometopic, "relay/+/shelly1/state");
             subscribeTopic(client, hometopic, "elprice/currentquart");
+            subscribeTopic(client, hometopic, "elprice/daystats/#");
             subscribeTopic(client, zigbeetopic, "#");
             commInfo.mqtt = true;
             dispComm(&commInfo);
@@ -656,6 +690,7 @@ void app_main(void)
     evt_queue = xQueueCreate(15, sizeof(struct measurement));
 
     display_static_elements();
+    display_indicatoramount(6);
     dispLevel(0);
     dispTemperature(0);
     dispPrice(0,normal);
@@ -710,12 +745,12 @@ void app_main(void)
                 break;
 
                 case DOOR:
-                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
+                    ESP_LOGI(log_tag, "Received door indicator %d", meas.data.indic);
                     display_indicator(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, INDEX_DOOR);
                 break;
 
                 case FLOOD:
-                    ESP_LOGI(log_tag, "Received indicator %d", meas.data.indic);
+                    ESP_LOGI(log_tag, "Received flooding indicator %d", meas.data.indic);
                     display_indicator(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, INDEX_FLOOD);
                 break;
 
@@ -724,8 +759,11 @@ void app_main(void)
                 break;
 
                 case PRICE:
-                    display_price(&meas.data.price);
+                    display_price(&meas.data.price, 10, 230 );
                 break;
+
+                case AVGPRICE:
+                    display_price(&meas.data.price, 160, 230 );
 
             }    
         }

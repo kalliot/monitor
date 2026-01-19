@@ -8,12 +8,13 @@ extern "C" {
 }
 
 #define LGFX_WT32_SC01
-#define SIZE_INDICATOR 20
+#define HEIGHT_INDICATOR 30
 
 #include <LGFX_AUTODETECT.hpp>
 
 // LCD handle
 static LGFX lcd;
+static int ind_spacing = 10;
 
 /**
  * Draw masked image.
@@ -124,11 +125,12 @@ extern "C" void display_static_elements(void)
     fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
     fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
     fill(70, 210, 5, 5, main_color);   // dot between temperature full and remain
-    fill(70, 260, 5, 5, main_color);  // price full and remain.
+    //fill(70, 260, 5, 5, main_color);  // price full and remain.
     lcd.endWrite();
 }
+// x  = 10, y = 230
 
-extern "C" void display_price(struct Price *price)
+extern "C" void display_price(struct Price *price, int x, int y)
 {
     uint32_t color;
     unsigned long whole = (unsigned long) price->euros;
@@ -137,7 +139,7 @@ extern "C" void display_price(struct Price *price)
     switch (price->level)
     {
         case low:
-            color = lcd.color888(100, 255, 100);
+            color = lcd.color888(40, 255, 40);
             break;
 
         case normal:
@@ -145,7 +147,7 @@ extern "C" void display_price(struct Price *price)
             break;
 
         case high:
-            color = lcd.color888(255, 100, 100);
+            color = lcd.color888(255, 50, 50);
             break;
 
         default:
@@ -154,8 +156,9 @@ extern "C" void display_price(struct Price *price)
     }
 
     lcd.startWrite();
-    draw_number(get_font(font28), 10, 230, color, whole, 2);
-    draw_number(get_font(font28), 80, 230, color, fract, 2);
+    draw_number(get_font(font28), x, y, color, whole, 2);
+    draw_number(get_font(font28), x + 70, y, color, fract, 2);
+    fill(x+60, y+30, 5, 5, color);
     lcd.endWrite();
 }
 
@@ -166,8 +169,8 @@ extern "C" void display_temperature(float temperature)
     unsigned long fract = 100 * (temperature - whole);
 
     lcd.startWrite();
-    draw_number(get_font(font28), 10, 180, main_color, whole, 2);
-    draw_number(get_font(font28), 80, 180, main_color, fract, 2);
+    draw_number(get_font(font28), 10, 170, main_color, whole, 2);
+    draw_number(get_font(font28), 80, 170, main_color, fract, 2);
     lcd.endWrite();
 }   
 
@@ -176,7 +179,7 @@ extern "C" void display_level(unsigned long level)
     const uint32_t main_color = lcd.color888(100, 219, 255);
 
     lcd.startWrite();
-    draw_number(get_font(font28), 160, 180, main_color, level, 3);
+    draw_number(get_font(font28), 160, 170, main_color, level, 3);
     lcd.endWrite();
 }   
 
@@ -185,35 +188,53 @@ extern "C" void display_time(struct ntpTime *time)
     const uint32_t main_color = lcd.color888(100, 219, 255);
 
     lcd.startWrite();
-    draw_number(get_font(font100), 10, 10, main_color, time->hours, 2);
-    draw_number(get_font(font100), 270, 10, main_color, time->minutes, 2);
+    draw_number(get_font(font100), 10, 20, main_color, time->hours, 2);
+    draw_number(get_font(font100), 270, 20, main_color, time->minutes, 2);
     //draw_number(get_font(font60), 350, 190, main_color, time->seconds, 2);
     lcd.endWrite();
 }
 
 extern "C" void display_comm(struct commState *state)
 {
-    const struct image* img = NULL;
+    const struct image* iWifi = get_image(image_wifi);
+    const struct image* iMqtt = get_image(image_mqtt);
+    const struct image* iNtp = get_image(image_ntp);
+    const uint32_t on_color = lcd.color888(50, 255, 50);
+    const uint32_t off_color = lcd.color888(255, 50, 50);
+    uint32_t wificolor, ntpcolor, mqttcolor;
+
+    if (state->wifi)
+        wificolor = on_color;
+    else
+        wificolor = off_color;
+
+    if (state->ntp)
+        ntpcolor = on_color;
+    else
+        ntpcolor = off_color;
+
+    if (state->mqtt)
+        mqttcolor = on_color;
+    else
+        mqttcolor = off_color;
 
     lcd.startWrite();
-    if (!state->wifi) {
-        img = get_image(image_wifi);
-    } else if (!state->ntp) {
-        img = get_image(image_ntp);
-    }
-    if (img) {
-        draw_image(img, DISPLAY_WIDTH / 2 - 10, 0,
-                    lcd.color888(0xff, 0xff, 0));
-    } else {
-        fill(DISPLAY_WIDTH / 2 - 10, 0, 20, 20, lcd.color888(0, 0, 0));
-    }
+    draw_image(iWifi, DISPLAY_WIDTH / 2 - 30, 0, wificolor);
+    draw_image(iNtp, DISPLAY_WIDTH / 2 - 5, 0, ntpcolor);
+    draw_image(iMqtt, DISPLAY_WIDTH / 2 + 20, 0, mqttcolor);
     lcd.endWrite();
+}
+
+
+extern "C" void display_indicatoramount(int amount)
+{
+    ind_spacing = DISPLAY_WIDTH / amount;
 }
 
 extern "C" void display_indicator(enum indicator state, int index)
 {
-    const uint32_t connected_color  = lcd.color888(0xff, 0x0b, 0x0b);
-    const uint32_t off_color = lcd.color888(0x0b, 0x0b, 0xff);
+    const uint32_t connected_color  = lcd.color888(255, 50, 50);
+    const uint32_t off_color = lcd.color888(0, 0, 0);
     const uint32_t on_color = lcd.color888(0xff, 0xff, 0x0b);
     uint32_t color = off_color;
     
@@ -232,6 +253,6 @@ extern "C" void display_indicator(enum indicator state, int index)
             break;
     }
     lcd.startWrite();
-    fill(index * SIZE_INDICATOR,DISPLAY_HEIGHT - SIZE_INDICATOR, SIZE_INDICATOR, SIZE_INDICATOR, color);
+    fill(index * ind_spacing, DISPLAY_HEIGHT - HEIGHT_INDICATOR, ind_spacing, HEIGHT_INDICATOR, color);
     lcd.endWrite();
 }

@@ -11,6 +11,7 @@
 enum image_type {
     image_wifi,
     image_ntp,
+    image_mqtt,
     image_celsius,
     image_percent,
     image_mm,
