@@ -12,9 +12,12 @@ enum image_type {
     image_wifi,
     image_ntp,
     image_mqtt,
-    image_celsius,
-    image_percent,
-    image_mm,
+    image_car,
+    image_burner,
+    image_heater,
+    image_solar,
+    image_door,
+    image_flood,
 };
 
 // Supported fonts (digits 0-9 only)

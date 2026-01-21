@@ -18,6 +18,7 @@
 #include <nvs_flash.h>
 #include "mqtt_client.h"
 #include "memory.h"
+#include "resources.h"
 
 #define INDEX_CARHEATER     0
 #define INDEX_DOOR          1
@@ -694,12 +695,13 @@ void app_main(void)
     dispLevel(0);
     dispTemperature(0);
     dispPrice(0,normal);
-    dispState(INDICATOR_OFF, CARHEATER);
-    dispState(INDICATOR_OFF, OILBURNER);
-    dispState(INDICATOR_OFF, STOCKHEAT);
-    dispState(INDICATOR_OFF, SOLHEAT);
-    dispState(INDICATOR_OFF, DOOR);
-    dispState(INDICATOR_OFF, FLOOD);
+    dispState(INDICATOR_ON, CARHEATER);
+    dispState(INDICATOR_ON, OILBURNER);
+    dispState(INDICATOR_ON, DOOR);
+    dispState(INDICATOR_ON, STOCKHEAT);
+    dispState(INDICATOR_ON, SOLHEAT);
+    dispState(INDICATOR_ON, FLOOD);
+
     on_clock_tick(chipid); // chipid is not used.
 
     esp_mqtt_client_handle_t client = mqtt_app_start(chipid);
@@ -729,29 +731,29 @@ void app_main(void)
                 break;
 
                 case CARHEATER:
-                    display_indicator(meas.data.indic, INDEX_CARHEATER);
+                    display_icon(meas.data.indic, image_car, INDEX_CARHEATER);
                 break;
 
                 case OILBURNER:
-                    display_indicator(meas.data.indic, INDEX_OILBURNER);
+                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_burner, INDEX_OILBURNER);
                 break;
 
                 case STOCKHEAT:
-                    display_indicator(meas.data.indic, INDEX_STOCKHEATER );
+                    display_icon(meas.data.indic, image_heater, INDEX_STOCKHEATER);
                 break;
 
                 case SOLHEAT:
-                    display_indicator(meas.data.indic, INDEX_SOLHEATER );
+                    display_icon(meas.data.indic, image_solar, INDEX_SOLHEATER);
                 break;
 
                 case DOOR:
                     ESP_LOGI(log_tag, "Received door indicator %d", meas.data.indic);
-                    display_indicator(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, INDEX_DOOR);
+                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_door, INDEX_DOOR);
                 break;
 
                 case FLOOD:
                     ESP_LOGI(log_tag, "Received flooding indicator %d", meas.data.indic);
-                    display_indicator(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, INDEX_FLOOD);
+                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_flood, INDEX_FLOOD);
                 break;
 
                 case TIME:

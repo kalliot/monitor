@@ -3,15 +3,20 @@
 
 #include "resources.h"
 
-#include "img/celsius.xbm"
+//#include "img/celsius.xbm"
 #include "img/font100.xbm"
 #include "img/font28.xbm"
 #include "img/font60.xbm"
-#include "img/mm.xbm"
+#include "img/door32.xbm"
 #include "img/ntp.xbm"
-#include "img/percent.xbm"
+#include "img/heater32.xbm"
+#include "img/burner32.xbm"
+#include "img/solar32.xbm"
+#include "img/car32.xbm"
+#include "img/flood32.xbm"
 #include "img/wifi.xbm"
 #include "img/mqtt.xbm"
+
 
 #define XBM_STRIDE(w) (((w + 7) / 8) * 8)
 
@@ -49,36 +54,55 @@ static const struct image images[] = {
         .stride = XBM_STRIDE(wifi_width),
         .mask = wifi_bits,
     },
-    [image_mqtt] = {
-        .width = mqtt_width,
-        .height = mqtt_height,
-        .stride = XBM_STRIDE(mqtt_width),
-        .mask = mqtt_bits,
-    },
     [image_ntp] = {
         .width = ntp_width,
         .height = ntp_height,
         .stride = XBM_STRIDE(wifi_width),
         .mask = ntp_bits,
     },
-    [image_celsius] = {
-        .width = celsius_width,
-        .height = celsius_height,
-        .stride = XBM_STRIDE(celsius_width),
-        .mask = celsius_bits,
+    [image_mqtt] = {
+        .width = mqtt_width,
+        .height = mqtt_height,
+        .stride = XBM_STRIDE(mqtt_width),
+        .mask = mqtt_bits,
     },
-    [image_percent] = {
-        .width = percent_width,
-        .height = percent_height,
-        .stride = XBM_STRIDE(percent_width),
-        .mask = percent_bits,
+    [image_car] = {
+        .width = car_width,
+        .height = car_height,
+        .stride = XBM_STRIDE(car_width),
+        .mask = car_bits,
     },
-    [image_mm] = {
-        .width = mm_width,
-        .height = mm_height,
-        .stride = XBM_STRIDE(mm_width),
-        .mask = mm_bits,
+    [image_burner] = {
+        .width = burner_width,
+        .height = burner_height,
+        .stride = XBM_STRIDE(burner_width),
+        .mask = burner_bits,
     },
+    [image_heater] = {
+        .width = heater_width,
+        .height = heater_height,
+        .stride = XBM_STRIDE(heater_width),
+        .mask = heater_bits,
+    },
+    [image_solar] = {
+        .width = solar_width,
+        .height = solar_height,
+        .stride = XBM_STRIDE(solar_width),
+        .mask = solar_bits,
+    },
+    [image_door] = {
+        .width = door_width,
+        .height = door_height,
+        .stride = XBM_STRIDE(door_width),
+        .mask = door_bits,
+    },
+    [image_flood] = {
+        .width = flood_width,
+        .height = flood_height,
+        .stride = XBM_STRIDE(flood_width),
+        .mask = flood_bits,
+    },
+
 };
 
 const struct image* get_image(enum image_type type)

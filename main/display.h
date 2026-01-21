@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "resources.h"
 
 // Display size
 #define DISPLAY_WIDTH  480
@@ -101,6 +102,7 @@ void display_init(void);
 void display_redraw(const struct info* info);
 void display_indicator(enum indicator state, int index);
 void display_indicatoramount(int amount);
+void display_icon(enum indicator state, enum image_type itype, int index);
 void display_temperature(float temperature);
 void display_price(struct Price *price, int x, int y);
 void display_level(unsigned long level);

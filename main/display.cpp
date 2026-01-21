@@ -8,7 +8,7 @@ extern "C" {
 }
 
 #define LGFX_WT32_SC01
-#define HEIGHT_INDICATOR 30
+#define HEIGHT_INDICATOR 33
 
 #include <LGFX_AUTODETECT.hpp>
 
@@ -18,7 +18,7 @@ static int ind_spacing = 10;
 
 /**
  * Draw masked image.
- * @param font pointer to the image instance to use
+ * @param img pointer to the image instance to use
  * @param x,y coordinates of the left top corner
  * @param color output color
  */
@@ -229,6 +229,30 @@ extern "C" void display_comm(struct commState *state)
 extern "C" void display_indicatoramount(int amount)
 {
     ind_spacing = DISPLAY_WIDTH / amount;
+}
+
+extern "C" void display_icon(enum indicator state, enum image_type itype, int index)
+{
+    uint32_t color = lcd.color888(0, 0, 0);
+
+    switch (state)
+    {
+        case INDICATOR_OFF:
+            color = lcd.color888(0, 0, 0);
+            break;
+
+        case INDICATOR_ON:
+            color = lcd.color888(255, 255, 50);
+            break;
+
+        case INDICATOR_CONNECTED:
+            color = lcd.color888(255, 50, 50);
+            break;
+    }
+    const struct image* iImage = get_image(itype);
+    lcd.startWrite();
+    draw_image(iImage, index * ind_spacing + 3, DISPLAY_HEIGHT - HEIGHT_INDICATOR, color);
+    lcd.endWrite();
 }
 
 extern "C" void display_indicator(enum indicator state, int index)
