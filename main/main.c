@@ -1,24 +1,24 @@
-// SPDX-License-Identifier: MIT
-// Super-duper-clock.
-
 #include "display.h"
+#include "homeapp.h"
 #include "cJSON.h"
 
-//#include <bme280.h>
 #include <driver/gpio.h>
 #include <esp_log.h>
 #include <esp_sntp.h>
 #include <esp_timer.h>
 #include <esp_wifi.h>
+#include "esp_system.h"
+#include "esp_app_desc.h"
 #include <freertos/queue.h>
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_event.h"
-//#include <i2c_bus.h>
 #include <nvs_flash.h>
 #include "mqtt_client.h"
 #include "memory.h"
 #include "resources.h"
+#include "device/device.h"
+
 
 #define INDEX_CARHEATER     0
 #define INDEX_DOOR          1
@@ -26,27 +26,41 @@
 #define INDEX_OILBURNER     3
 #define INDEX_STOCKHEATER   4
 #define INDEX_SOLHEATER     5
+#define INDEX_BATTERY       6
+#define INDEX_CAUTION       7
+
 
 #define FLOODFLAG_TRASH     1
 #define FLOODFLAG_LATTIA    2
 #define FLOODFLAG_TISKIKONE 4
+
+#define BATTFLAG_TRASH     1
+#define BATTFLAG_LATTIA    2
+#define BATTFLAG_TISKIKONE 4
+#define BATTFLAG_STORE     8
+#define BATTFLAG_BOILER    16
+#define BATTFLAG_BALKONG   32
+#define BATTFLAG_FRONT     64
+
 
 #define DOORFLAG_STORE     1
 #define DOORFLAG_BOILER    2
 #define DOORFLAG_BALKONG   4
 #define DOORFLAG_FRONT     8
 
+// don't define batteryflags, there is too much of them.
 
 // Log tag
+
+char jsondata[512];
+
 static const char* log_tag = "monitor";
-// BME280 sensor hadle
-//static bme280_handle_t bme280;
-// Current info to display
-//static struct info info;
+static char *program_version = "0.0.0.1";
+static char appname[20];
 static struct commState commInfo;
 static QueueHandle_t evt_queue = NULL;
 
-
+static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid);
 
 static void log_error_if_nonzero(const char *message, int error_code)
 {
@@ -363,6 +377,7 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
     static float avgDayPrice = -10;
     static int floodFlag = 0x0;
     static int doorFlag  = 0x0;
+    static int battFlag = 0x0;
 
     time(&now);
     if (root != NULL)
@@ -456,6 +471,11 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     doorFlag |= DOORFLAG_STORE;
                 else
                     doorFlag &= ~DOORFLAG_STORE;
+
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_STORE;
+                else
+                    battFlag &= ~BATTFLAG_STORE;
                 break;
 
             case 4:
@@ -464,6 +484,11 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     doorFlag |= DOORFLAG_BOILER;
                 else
                     doorFlag &= ~DOORFLAG_BOILER;
+
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_BOILER;
+                else
+                    battFlag &= ~BATTFLAG_BOILER;
                 break;
 
             case 5:
@@ -472,6 +497,11 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     doorFlag |= DOORFLAG_BALKONG;
                 else
                     doorFlag &= ~DOORFLAG_BALKONG;
+
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_BALKONG;
+                else
+                    battFlag &= ~BATTFLAG_BALKONG;
                 break;
 
             case 6:
@@ -480,6 +510,12 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     floodFlag |= FLOODFLAG_TRASH;
                 else
                     floodFlag &= ~FLOODFLAG_TRASH;
+
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_TRASH;
+                else
+                    battFlag &= ~BATTFLAG_TRASH;
+
                 break;
 
             case 7:
@@ -489,6 +525,11 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 else
                     floodFlag &= ~FLOODFLAG_LATTIA;
 
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_LATTIA;
+                else
+                    battFlag &= ~BATTFLAG_LATTIA;
+
                 break;
 
             case 8:
@@ -497,6 +538,11 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     floodFlag |= FLOODFLAG_TISKIKONE;
                 else
                     floodFlag &= ~FLOODFLAG_TISKIKONE;
+
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_TISKIKONE;
+                else
+                    battFlag &= ~BATTFLAG_TISKIKONE;
 
                 break;
 
@@ -523,6 +569,12 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     doorFlag |= DOORFLAG_FRONT;
                 else
                     doorFlag &= ~DOORFLAG_FRONT;
+
+                if (getJsonState(root,"battery_low"))
+                    battFlag |= BATTFLAG_FRONT;
+                else
+                    battFlag &= ~BATTFLAG_FRONT;
+
                 break;
 
             case 11:
@@ -549,6 +601,9 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
             if (doorFlag) dispState(INDICATOR_ON, DOOR);
             else dispState(INDICATOR_OFF, DOOR);
+
+            if (battFlag) dispState(INDICATOR_ON, BATTERY);
+            else dispState(INDICATOR_OFF, BATTERY);
         }
         cJSON_Delete(root);
     }
@@ -593,7 +648,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             subscribeTopic(client, hometopic, "elprice/daystats/#");
             subscribeTopic(client, zigbeetopic, "#");
             commInfo.mqtt = true;
+            device_sendstatus(client, "home/kallio", appname, (uint8_t *) handler_args);
             dispComm(&commInfo);
+            sendInfo(client, (uint8_t *) handler_args);
+            // TODO: caution handling
+            dispState(INDICATOR_OFF, CAUTION);
         break;
 
     case MQTT_EVENT_DISCONNECTED:
@@ -641,6 +700,7 @@ static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
 {
     char client_id[128];
     char uri[64];
+    char deviceTopic[42];
     
     sprintf(client_id,"client_id=%x%x%x",chipid[3],chipid[4],chipid[5]);
     sprintf(uri,"mqtt://%s:%s","192.168.101.231", "1883");
@@ -648,18 +708,47 @@ static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
     ESP_LOGI(log_tag,"built client id=[%s]",client_id);
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = uri,
-        .credentials.client_id = client_id
-        //.session.last_will.topic = device_topic(comminfo->mqtt_prefix, deviceTopic, chipid),
-        //.session.last_will.msg = device_data(jsondata, chipid, appname, 0),
-        //.session.last_will.msg_len = strlen(jsondata),
-        //.session.last_will.qos = 0,
-        //.session.last_will.retain = 1
+        .credentials.client_id = client_id,
+        .session.last_will.topic = device_topic("home/kallio", deviceTopic, chipid),
+        .session.last_will.msg = device_data(jsondata, chipid, appname, 0),
+        .session.last_will.msg_len = strlen(jsondata),
+        .session.last_will.qos = 0,
+        .session.last_will.retain = 1
     };
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
 
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, chipid);
     esp_mqtt_client_start(client);
     return client;
+}
+
+static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
+{
+    gpio_set_level(BLINK_GPIO, true);
+
+    char infoTopic[52];
+
+    //sprintf(infoTopic,"%s/%s/%x%x%x/info",
+    //     comminfo->mqtt_prefix, appname, chipid[3],chipid[4],chipid[5]);
+    sprintf(infoTopic,"home/kallio/%s/%x%x%x/info",
+         appname, chipid[3],chipid[4],chipid[5]);
+
+    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%ld,\"idfversion\":\"%s\",\"progversion\":\"%s\"}",
+                chipid[3],chipid[4],chipid[5],
+                esp_get_free_heap_size(),
+                esp_get_idf_version(),
+                program_version);
+    esp_mqtt_client_publish(client, infoTopic, jsondata , 0, 0, 1);
+    //statistics_getptr()->sendcnt++;
+    ESP_LOGI(log_tag,"sending info");
+    gpio_set_level(BLINK_GPIO, false);
+}
+
+
+static void get_appname(void)
+{
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    strncpy(appname,app_desc->project_name,20);
 }
 
 // Entry point
@@ -683,24 +772,27 @@ void app_main(void)
     setenv("TZ", "GMT-2", 1);
     tzset();
 
-    //bme280_init();
+    get_appname();
     display_init();
     ESP_ERROR_CHECK(nvs_flash_init());
     wifi_init();
 
-    evt_queue = xQueueCreate(15, sizeof(struct measurement));
+    evt_queue = xQueueCreate(20, sizeof(struct measurement));
 
     display_static_elements();
-    display_indicatoramount(6);
+    display_indicatoramount(8);
     dispLevel(0);
     dispTemperature(0);
     dispPrice(0,normal);
-    dispState(INDICATOR_ON, CARHEATER);
-    dispState(INDICATOR_ON, OILBURNER);
-    dispState(INDICATOR_ON, DOOR);
-    dispState(INDICATOR_ON, STOCKHEAT);
-    dispState(INDICATOR_ON, SOLHEAT);
-    dispState(INDICATOR_ON, FLOOD);
+
+    display_icon(INDICATOR_ON, image_car, INDEX_CARHEATER);
+    display_icon(INDICATOR_ON, image_burner, INDEX_OILBURNER);
+    display_icon(INDICATOR_ON, image_door, INDEX_DOOR);
+    display_icon(INDICATOR_ON, image_heater, INDEX_STOCKHEATER);
+    display_icon(INDICATOR_ON, image_solar, INDEX_SOLHEATER);
+    display_icon(INDICATOR_ON, image_flood, INDEX_FLOOD);
+    display_icon(INDICATOR_ON, image_battery, INDEX_BATTERY);
+    display_icon(INDICATOR_ON, image_caution, INDEX_CAUTION);
 
     on_clock_tick(chipid); // chipid is not used.
 
@@ -747,13 +839,21 @@ void app_main(void)
                 break;
 
                 case DOOR:
-                    ESP_LOGI(log_tag, "Received door indicator %d", meas.data.indic);
                     display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_door, INDEX_DOOR);
                 break;
 
                 case FLOOD:
-                    ESP_LOGI(log_tag, "Received flooding indicator %d", meas.data.indic);
                     display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_flood, INDEX_FLOOD);
+                break;
+
+                case BATTERY:
+                    ESP_LOGI(log_tag, "Received battery indicator %d", meas.data.indic);
+                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_battery, INDEX_BATTERY);
+                break;
+
+                case CAUTION:
+                    ESP_LOGI(log_tag, "Received caution indicator %d", meas.data.indic);
+                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_caution, INDEX_CAUTION);
                 break;
 
                 case TIME:

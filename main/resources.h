@@ -18,6 +18,8 @@ enum image_type {
     image_solar,
     image_door,
     image_flood,
+    image_battery,
+    image_caution
 };
 
 // Supported fonts (digits 0-9 only)

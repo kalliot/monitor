@@ -29,12 +29,16 @@ enum meastype
     COMM,
     TEMPERATURE,
     LEVEL,
+
     CARHEATER,
     OILBURNER,
     STOCKHEAT,
     SOLHEAT,
     DOOR,
     FLOOD,
+    BATTERY,
+    CAUTION,
+
     TIME,
     PRICE,
     AVGPRICE

@@ -1,8 +1,8 @@
 # register project as IDF component
 idf_component_register(
-    SRCS         "main.c" "resources.c" "display.cpp" "cJSON.c"
+    SRCS         "main.c" "resources.c" "display.cpp" "cJSON.c" "device/device.c" "statistics/statistics.c"
     INCLUDE_DIRS "."
-    REQUIRES     "lgfx" "esp_wifi" "mqtt"
+    REQUIRES     "lgfx" "esp_wifi" "mqtt" "esp_app_format"
 )
 
 # WiFi name and password

@@ -14,8 +14,12 @@
 #include "img/solar32.xbm"
 #include "img/car32.xbm"
 #include "img/flood32.xbm"
+#include "img/battery32.xbm"
+#include "img/caution32.xbm"
+
 #include "img/wifi.xbm"
 #include "img/mqtt.xbm"
+
 
 
 #define XBM_STRIDE(w) (((w + 7) / 8) * 8)
@@ -101,6 +105,18 @@ static const struct image images[] = {
         .height = flood_height,
         .stride = XBM_STRIDE(flood_width),
         .mask = flood_bits,
+    },
+    [image_battery] = {
+        .width = battery_width,
+        .height = battery_height,
+        .stride = XBM_STRIDE(battery_width),
+        .mask = battery_bits,
+    },
+    [image_caution] = {
+        .width = caution_width,
+        .height = caution_height,
+        .stride = XBM_STRIDE(caution_width),
+        .mask = caution_bits,
     },
 
 };
