@@ -314,6 +314,7 @@ struct messageId messageIds[] = {
     {hometopic,      NULL,               "relay",            2},
     {hometopic,      NULL,               "elprice",          9},    
     {hometopic,      NULL,               "daystats",         11},
+    {hometopic,      NULL,               "alarm",            12},
     {zigbeetopic,   "store_door",        NULL,               3},
     {zigbeetopic,   "boiler_door",       NULL,               4},
     {zigbeetopic,   "balkong_door",      NULL,               5},
@@ -574,7 +575,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     battFlag |= BATTFLAG_FRONT;
                 else
                     battFlag &= ~BATTFLAG_FRONT;
-
                 break;
 
             case 11:
@@ -588,6 +588,19 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                             dispAvgPrice(avgDayPrice);
                         }
                     }
+                }
+                break;
+
+            case 12:
+                {
+                    bool alState = getJsonState(root,"state");
+                    char *descr = getJsonStr(root, "description");
+                    ESP_LOGI(log_tag, "Alarm received, state=%d, source=%s, description=%s",
+                        alState, getJsonStr(root, "source"), getJsonStr(root, "description"));
+                    if (alState)
+                        dispState(INDICATOR_CONNECTED, CAUTION);
+                    else
+                        dispState(INDICATOR_OFF, CAUTION);
                 }
                 break;
 
@@ -610,6 +623,17 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
     return 0;
 }
 
+static void indicators(bool on)
+{
+    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_car, INDEX_CARHEATER);
+    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_burner, INDEX_OILBURNER);
+    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_door, INDEX_DOOR);
+    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_heater, INDEX_STOCKHEATER);
+    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_solar, INDEX_SOLHEATER);
+    display_icon(on ? INDICATOR_CONNECTED : INDICATOR_OFF, image_flood, INDEX_FLOOD);
+    display_icon(on ? INDICATOR_CONNECTED : INDICATOR_OFF, image_battery, INDEX_BATTERY);
+    display_icon(on ? INDICATOR_CONNECTED : INDICATOR_OFF, image_caution, INDEX_CAUTION);
+}
 
 
 int subscribeTopic(esp_mqtt_client_handle_t client, const char *prefix, char *topic)
@@ -631,6 +655,8 @@ int subscribeTopic(esp_mqtt_client_handle_t client, const char *prefix, char *to
  * @param event_data The data for the event, esp_mqtt_event_handle_t.
  */
 
+// mosquitto_pub -h 192.168.101.231 -t 'home/kallio/boiler/alarm/boiler' -m '{"source":"boiler", "id":"alarm","ts":1769871801,"state":true,"description":"oil burner fault" }'
+
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
@@ -640,24 +666,24 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
+            indicators(false);
             ESP_LOGI(log_tag, "MQTT_EVENT_CONNECTED");
             subscribeTopic(client, hometopic, "thermostat/+/parameters/#");
             subscribeTopic(client, hometopic, "relay/0/shellyplus1pm/state");
             subscribeTopic(client, hometopic, "relay/+/shelly1/state");
             subscribeTopic(client, hometopic, "elprice/currentquart");
             subscribeTopic(client, hometopic, "elprice/daystats/#");
+            subscribeTopic(client, hometopic, "+/alarm/#");
             subscribeTopic(client, zigbeetopic, "#");
             commInfo.mqtt = true;
             device_sendstatus(client, "home/kallio", appname, (uint8_t *) handler_args);
             dispComm(&commInfo);
             sendInfo(client, (uint8_t *) handler_args);
-            // TODO: caution handling
-            dispState(INDICATOR_OFF, CAUTION);
         break;
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(log_tag, "MQTT_EVENT_DISCONNECTED");
-        commInfo.mqtt = false; // TODO: mqtt does not yet have any indicator.
+        commInfo.mqtt = false; 
         dispComm(&commInfo);
         break;
 
@@ -771,7 +797,6 @@ void app_main(void)
     // set timezone
     setenv("TZ", "GMT-2", 1);
     tzset();
-
     get_appname();
     display_init();
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -781,18 +806,10 @@ void app_main(void)
 
     display_static_elements();
     display_indicatoramount(8);
+    indicators(true); // show all the indicators shortly.
     dispLevel(0);
     dispTemperature(0);
     dispPrice(0,normal);
-
-    display_icon(INDICATOR_ON, image_car, INDEX_CARHEATER);
-    display_icon(INDICATOR_ON, image_burner, INDEX_OILBURNER);
-    display_icon(INDICATOR_ON, image_door, INDEX_DOOR);
-    display_icon(INDICATOR_ON, image_heater, INDEX_STOCKHEATER);
-    display_icon(INDICATOR_ON, image_solar, INDEX_SOLHEATER);
-    display_icon(INDICATOR_ON, image_flood, INDEX_FLOOD);
-    display_icon(INDICATOR_ON, image_battery, INDEX_BATTERY);
-    display_icon(INDICATOR_ON, image_caution, INDEX_CAUTION);
 
     on_clock_tick(chipid); // chipid is not used.
 
@@ -843,17 +860,15 @@ void app_main(void)
                 break;
 
                 case FLOOD:
-                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_flood, INDEX_FLOOD);
+                    display_icon(meas.data.indic ? INDICATOR_CONNECTED : INDICATOR_OFF, image_flood, INDEX_FLOOD);
                 break;
 
                 case BATTERY:
-                    ESP_LOGI(log_tag, "Received battery indicator %d", meas.data.indic);
-                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_battery, INDEX_BATTERY);
+                    display_icon(meas.data.indic ? INDICATOR_CONNECTED : INDICATOR_OFF, image_battery, INDEX_BATTERY);
                 break;
 
                 case CAUTION:
-                    ESP_LOGI(log_tag, "Received caution indicator %d", meas.data.indic);
-                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_caution, INDEX_CAUTION);
+                    display_icon(meas.data.indic ? INDICATOR_CONNECTED : INDICATOR_OFF, image_caution, INDEX_CAUTION);
                 break;
 
                 case TIME:

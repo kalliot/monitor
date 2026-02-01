@@ -139,7 +139,7 @@ extern "C" void display_price(struct Price *price, int x, int y)
     switch (price->level)
     {
         case low:
-            color = lcd.color888(40, 255, 40);
+            color = lcd.color888(30, 255, 30);
             break;
 
         case normal:
