@@ -114,7 +114,7 @@ extern "C" void display_init(void)
 
 extern "C" void display_static_elements(void)
 {
-    const uint32_t main_color = lcd.color888(100, 219, 255);
+    const uint32_t main_color = lcd.color888(200, 200, 200);
     const uint32_t clr = lcd.color888(0xa0, 0x00, 0x00);
 
     lcd.startWrite();
@@ -133,8 +133,8 @@ extern "C" void display_static_elements(void)
 extern "C" void display_price(struct Price *price, int x, int y)
 {
     uint32_t color;
-    unsigned long whole = (unsigned long) price->euros;
-    unsigned long fract = 100 * (price->euros - whole);
+    long whole = (long) price->euros;
+    long fract = 100 * (price->euros - whole);
 
     switch (price->level)
     {
@@ -143,7 +143,7 @@ extern "C" void display_price(struct Price *price, int x, int y)
             break;
 
         case normal:
-            color = lcd.color888(100, 219, 255);
+            color = lcd.color888(200, 200, 200);
             break;
 
         case high:
@@ -151,7 +151,7 @@ extern "C" void display_price(struct Price *price, int x, int y)
             break;
 
         default:
-            color = lcd.color888(100, 219, 255);
+            color = lcd.color888(200, 200, 200);
             break;
     }
 
@@ -164,7 +164,7 @@ extern "C" void display_price(struct Price *price, int x, int y)
 
 extern "C" void display_temperature(float temperature)
 {
-    const uint32_t main_color = lcd.color888(100, 219, 255);
+    const uint32_t main_color = lcd.color888(200, 200, 200);
     unsigned long whole = (unsigned long) temperature;
     unsigned long fract = 100 * (temperature - whole);
 
@@ -176,7 +176,7 @@ extern "C" void display_temperature(float temperature)
 
 extern "C" void display_level(unsigned long level)
 {
-    const uint32_t main_color = lcd.color888(100, 219, 255);
+    const uint32_t main_color = lcd.color888(200, 200, 200);
 
     lcd.startWrite();
     draw_number(get_font(font28), 160, 170, main_color, level, 3);
@@ -185,7 +185,7 @@ extern "C" void display_level(unsigned long level)
 
 extern "C" void display_time(struct ntpTime *time)
 {
-    const uint32_t main_color = lcd.color888(100, 219, 255);
+    const uint32_t main_color = lcd.color888(200, 200, 200);
 
     lcd.startWrite();
     draw_number(get_font(font100), 10, 20, main_color, time->hours, 2);
@@ -241,11 +241,15 @@ extern "C" void display_icon(enum indicator state, enum image_type itype, int in
             color = lcd.color888(0, 0, 0);
             break;
 
-        case INDICATOR_ON:
+        case INDICATOR_OK: // ok
+            color = lcd.color888(50, 255, 50);
+            break;
+
+        case INDICATOR_WARN: // warn
             color = lcd.color888(255, 255, 50);
             break;
 
-        case INDICATOR_CONNECTED:
+        case INDICATOR_ALARM: // alarm
             color = lcd.color888(255, 50, 50);
             break;
     }
@@ -268,11 +272,12 @@ extern "C" void display_indicator(enum indicator state, int index)
             color = off_color;
             break;
 
-        case INDICATOR_ON:
+        case INDICATOR_OK:
+        case INDICATOR_WARN:
             color = on_color;
             break;
 
-        case INDICATOR_CONNECTED:
+        case INDICATOR_ALARM:
             color = connected_color;
             break;
     }

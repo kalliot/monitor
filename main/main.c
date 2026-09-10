@@ -33,15 +33,10 @@
 #define FLOODFLAG_TRASH     1
 #define FLOODFLAG_LATTIA    2
 #define FLOODFLAG_TISKIKONE 4
+#define FLOODFLAG_HUMIDITY  8
 
-#define BATTFLAG_TRASH     1
-#define BATTFLAG_LATTIA    2
-#define BATTFLAG_TISKIKONE 4
-#define BATTFLAG_STORE     8
-#define BATTFLAG_BOILER    16
-#define BATTFLAG_BALKONG   32
-#define BATTFLAG_FRONT     64
-
+#define BATTFLAG_WARN      1
+#define BATTFLAG_ALARM     2
 
 #define DOORFLAG_STORE     1
 #define DOORFLAG_BOILER    2
@@ -315,6 +310,8 @@ struct messageId messageIds[] = {
     {hometopic,      NULL,               "elprice",          9},    
     {hometopic,      NULL,               "daystats",         11},
     {hometopic,      NULL,               "alarm",            12},
+    {hometopic,      NULL,               "tzoffset",         13},
+    {hometopic,      NULL,               "warning",          14},
     {zigbeetopic,   "store_door",        NULL,               3},
     {zigbeetopic,   "boiler_door",       NULL,               4},
     {zigbeetopic,   "balkong_door",      NULL,               5},
@@ -429,11 +426,11 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                                 ESP_LOGI(log_tag,"got power %.2f", power);
                                 if (power > 10.0)
                                 {
-                                    dispState(INDICATOR_CONNECTED, CARHEATER);
+                                    dispState(INDICATOR_OK, CARHEATER);
                                 }
                                 else
                                 {
-                                    dispState(INDICATOR_ON, CARHEATER);
+                                    dispState(INDICATOR_ALARM, CARHEATER);
                                 }
                             }
                         }
@@ -444,7 +441,7 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                         {
                             case 0: // solarheater
                                 if (!state) dispState(INDICATOR_OFF, SOLHEAT);
-                                else dispState(INDICATOR_CONNECTED, SOLHEAT);
+                                else dispState(INDICATOR_OK, SOLHEAT);
                             break;
 
                             case 1:
@@ -452,13 +449,13 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
                             case 2: // stockheater
                                 if (!state) dispState(INDICATOR_OFF, STOCKHEAT);
-                                else dispState(INDICATOR_CONNECTED, STOCKHEAT);
+                                else dispState(INDICATOR_OK, STOCKHEAT);
 
                             break;
 
                             case 3:
                                 if (!state)  dispState(INDICATOR_OFF, OILBURNER);
-                                else dispState(INDICATOR_CONNECTED, OILBURNER);
+                                else dispState(INDICATOR_OK, OILBURNER);
                             break;
                         }
                     }
@@ -473,10 +470,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 else
                     doorFlag &= ~DOORFLAG_STORE;
 
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_STORE;
-                else
-                    battFlag &= ~BATTFLAG_STORE;
                 break;
 
             case 4:
@@ -486,10 +479,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 else
                     doorFlag &= ~DOORFLAG_BOILER;
 
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_BOILER;
-                else
-                    battFlag &= ~BATTFLAG_BOILER;
                 break;
 
             case 5:
@@ -499,10 +488,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 else
                     doorFlag &= ~DOORFLAG_BALKONG;
 
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_BALKONG;
-                else
-                    battFlag &= ~BATTFLAG_BALKONG;
                 break;
 
             case 6:
@@ -511,12 +496,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     floodFlag |= FLOODFLAG_TRASH;
                 else
                     floodFlag &= ~FLOODFLAG_TRASH;
-
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_TRASH;
-                else
-                    battFlag &= ~BATTFLAG_TRASH;
-
                 break;
 
             case 7:
@@ -526,11 +505,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 else
                     floodFlag &= ~FLOODFLAG_LATTIA;
 
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_LATTIA;
-                else
-                    battFlag &= ~BATTFLAG_LATTIA;
-
                 break;
 
             case 8:
@@ -539,12 +513,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     floodFlag |= FLOODFLAG_TISKIKONE;
                 else
                     floodFlag &= ~FLOODFLAG_TISKIKONE;
-
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_TISKIKONE;
-                else
-                    battFlag &= ~BATTFLAG_TISKIKONE;
-
                 break;
 
             case 9:
@@ -571,10 +539,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 else
                     doorFlag &= ~DOORFLAG_FRONT;
 
-                if (getJsonState(root,"battery_low"))
-                    battFlag |= BATTFLAG_FRONT;
-                else
-                    battFlag &= ~BATTFLAG_FRONT;
                 break;
 
             case 11:
@@ -598,41 +562,158 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     ESP_LOGI(log_tag, "Alarm received, state=%d, source=%s, description=%s",
                         alState, getJsonStr(root, "source"), getJsonStr(root, "description"));
                     if (alState)
-                        dispState(INDICATOR_CONNECTED, CAUTION);
+                        dispState(INDICATOR_ALARM, CAUTION);
                     else
                         dispState(INDICATOR_OFF, CAUTION);
+                }
+                break;
+
+            case 13:
+                {
+                    int offset = 7200;
+                    int hrs = 2;
+                    char szOffset[12];
+                    if (getJsonInt(root,"value", &offset))
+                    {
+                        hrs = offset / 3600;
+                        sprintf(szOffset, "GMT-%d", hrs);
+                        ESP_LOGI(log_tag, "Received timezone %s",szOffset);
+                        setenv("TZ", szOffset, 1);
+                        tzset();
+                    }
+                }
+                break;
+
+            case 14:
+                char *src = getJsonStr(root, "source");
+                if (!strcmp(src,"batteries"))
+                {
+                    cJSON *warnings = cJSON_GetObjectItem(root, "warnings");
+                    cJSON *alarms = cJSON_GetObjectItem(root, "alarms");
+                    cJSON *warning = NULL;
+                    cJSON *alarm = NULL;
+                    battFlag = 0;
+                    flagsChanged = true;
+
+                    if (warnings != NULL)
+                    {
+                        if (cJSON_IsArray(warnings))
+                        {
+                            if (cJSON_GetArraySize(warnings))
+                            {
+                                battFlag = BATTFLAG_WARN; // if there is at least one item in the array, lit the batt indicator
+
+                                cJSON_ArrayForEach(warning, warnings)
+                                {
+                                    char *name = getJsonStr(warning, "name");
+                                    int battvalue = 0;
+                                    if (getJsonInt(warning, "value",&battvalue))
+                                    {
+                                        ESP_LOGI(log_tag, "got batt warning for %s, batt value is %d", name, battvalue);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (alarms != NULL)
+                    {
+                        if (cJSON_IsArray(alarms))
+                        {
+                            if (cJSON_GetArraySize(alarms))
+                            {
+                                battFlag = BATTFLAG_ALARM; // if there is at least one item in the array, lit the batt indicator
+
+                                cJSON_ArrayForEach(alarm, alarms)
+                                {
+                                    char *name = getJsonStr(alarm, "name");
+                                    int battvalue = 0;
+                                    if (getJsonInt(alarm, "value",&battvalue))
+                                    {
+                                        ESP_LOGI(log_tag, "got batt alarm for %s, batt value is %d", name, battvalue);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!strcmp(src,"humidity"))
+                {
+                    char *name = getJsonStr(root, "name");
+                    int value = 0;
+                    if (getJsonInt(root, "value", &value))
+                    {
+                        ESP_LOGI(log_tag, "got humidity warn from %s, humidity is %d", name, value);
+                    }
+                    float deviation = 0;
+                    if (getJsonFloat(root,"deviation",&deviation))
+                    {
+                        ESP_LOGI(log_tag, "got humidity deviation is %.2f", deviation);
+                    }
+                    flagsChanged = true;
+                    floodFlag |= FLOODFLAG_HUMIDITY;
                 }
                 break;
 
             default:
                 break;
         }
-        if (flagsChanged)
-        {
-            if (floodFlag) dispState(INDICATOR_ON, FLOOD);
-            else dispState(INDICATOR_OFF, FLOOD);
-
-            if (doorFlag) dispState(INDICATOR_ON, DOOR);
-            else dispState(INDICATOR_OFF, DOOR);
-
-            if (battFlag) dispState(INDICATOR_ON, BATTERY);
-            else dispState(INDICATOR_OFF, BATTERY);
-        }
         cJSON_Delete(root);
+    }
+    else
+    {
+        if (event->topic_len)
+        {
+            char humidityTopic[40];
+
+            strcpy(humidityTopic, hometopic);
+            strcat(humidityTopic, "/zigbee/warning/humidity");
+            if (!memcmp(event->topic, humidityTopic, event->topic_len))
+            {
+                ESP_LOGI(log_tag, "topic %s disappeared", humidityTopic);
+                floodFlag &= ~FLOODFLAG_HUMIDITY;
+                flagsChanged = true;
+            }
+        }
+        // else its some very big data packet. Not handled in this prog
+    }
+
+    if (flagsChanged)
+    {
+        if (floodFlag) dispState(INDICATOR_ALARM, FLOOD);
+        else dispState(INDICATOR_OFF, FLOOD);
+
+        if (doorFlag) dispState(INDICATOR_WARN, DOOR);
+        else dispState(INDICATOR_OFF, DOOR);
+
+        switch (battFlag)
+        {
+            case BATTFLAG_WARN:
+                 dispState(INDICATOR_WARN, BATTERY);
+                 break;
+
+            case BATTFLAG_ALARM:
+                 dispState(INDICATOR_ALARM, BATTERY);
+                 break;
+
+            default:
+                 dispState(INDICATOR_OFF, BATTERY);
+                 break;
+        }
     }
     return 0;
 }
 
 static void indicators(bool on)
 {
-    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_car, INDEX_CARHEATER);
-    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_burner, INDEX_OILBURNER);
-    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_door, INDEX_DOOR);
-    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_heater, INDEX_STOCKHEATER);
-    display_icon(on ? INDICATOR_ON : INDICATOR_OFF, image_solar, INDEX_SOLHEATER);
-    display_icon(on ? INDICATOR_CONNECTED : INDICATOR_OFF, image_flood, INDEX_FLOOD);
-    display_icon(on ? INDICATOR_CONNECTED : INDICATOR_OFF, image_battery, INDEX_BATTERY);
-    display_icon(on ? INDICATOR_CONNECTED : INDICATOR_OFF, image_caution, INDEX_CAUTION);
+    display_icon(on ? INDICATOR_OK : INDICATOR_OFF, image_car, INDEX_CARHEATER);
+    display_icon(on ? INDICATOR_OK : INDICATOR_OFF, image_burner, INDEX_OILBURNER);
+    display_icon(on ? INDICATOR_OK : INDICATOR_OFF, image_door, INDEX_DOOR);
+    display_icon(on ? INDICATOR_OK : INDICATOR_OFF, image_heater, INDEX_STOCKHEATER);
+    display_icon(on ? INDICATOR_OK : INDICATOR_OFF, image_solar, INDEX_SOLHEATER);
+    display_icon(on ? INDICATOR_ALARM : INDICATOR_OFF, image_flood, INDEX_FLOOD);
+    display_icon(on ? INDICATOR_ALARM : INDICATOR_OFF, image_battery, INDEX_BATTERY);
+    display_icon(on ? INDICATOR_ALARM : INDICATOR_OFF, image_caution, INDEX_CAUTION);
 }
 
 
@@ -641,6 +722,7 @@ int subscribeTopic(esp_mqtt_client_handle_t client, const char *prefix, char *to
     char name[80];
 
     sprintf(name,"%s/%s", prefix, topic);
+    ESP_LOGI(log_tag, "subscribing %s", name);
     return esp_mqtt_client_subscribe(client, name , 0);
 }
 
@@ -674,6 +756,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             subscribeTopic(client, hometopic, "elprice/currentquart");
             subscribeTopic(client, hometopic, "elprice/daystats/#");
             subscribeTopic(client, hometopic, "+/alarm/#");
+            subscribeTopic(client, hometopic, "+/warning/#");
+            subscribeTopic(client, hometopic, "tzoffset");
             subscribeTopic(client, zigbeetopic, "#");
             commInfo.mqtt = true;
             device_sendstatus(client, "home/kallio", appname, (uint8_t *) handler_args);
@@ -844,7 +928,7 @@ void app_main(void)
                 break;
 
                 case OILBURNER:
-                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_burner, INDEX_OILBURNER);
+                    display_icon(meas.data.indic ? INDICATOR_OK : INDICATOR_OFF, image_burner, INDEX_OILBURNER);
                 break;
 
                 case STOCKHEAT:
@@ -856,19 +940,19 @@ void app_main(void)
                 break;
 
                 case DOOR:
-                    display_icon(meas.data.indic ? INDICATOR_ON : INDICATOR_OFF, image_door, INDEX_DOOR);
+                    display_icon(meas.data.indic ? INDICATOR_OK : INDICATOR_OFF, image_door, INDEX_DOOR);
                 break;
 
                 case FLOOD:
-                    display_icon(meas.data.indic ? INDICATOR_CONNECTED : INDICATOR_OFF, image_flood, INDEX_FLOOD);
+                    display_icon(meas.data.indic ? INDICATOR_ALARM : INDICATOR_OFF, image_flood, INDEX_FLOOD);
                 break;
 
                 case BATTERY:
-                    display_icon(meas.data.indic ? INDICATOR_CONNECTED : INDICATOR_OFF, image_battery, INDEX_BATTERY);
+                    display_icon(meas.data.indic, image_battery, INDEX_BATTERY);
                 break;
 
                 case CAUTION:
-                    display_icon(meas.data.indic ? INDICATOR_CONNECTED : INDICATOR_OFF, image_caution, INDEX_CAUTION);
+                    display_icon(meas.data.indic ? INDICATOR_ALARM : INDICATOR_OFF, image_caution, INDEX_CAUTION);
                 break;
 
                 case TIME:

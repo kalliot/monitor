@@ -14,8 +14,9 @@
 
 enum indicator {
     INDICATOR_OFF,
-    INDICATOR_ON,
-    INDICATOR_CONNECTED
+    INDICATOR_OK,
+    INDICATOR_WARN,
+    INDICATOR_ALARM
 };
 
 enum pricelevel {
