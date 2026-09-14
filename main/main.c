@@ -37,6 +37,9 @@
 
 #define BATTFLAG_WARN      1
 #define BATTFLAG_ALARM     2
+#define DATAFLAG_WARN      1
+#define DATAFLAG_ALARM     2
+
 
 #define DOORFLAG_STORE     1
 #define DOORFLAG_BOILER    2
@@ -367,6 +370,10 @@ static int todayNum(void)
     return now_local.tm_wday;
 }
 
+#define CAUTION_OFF 0
+#define CAUTION_WARN 1
+#define CAUTION_ALARM 2
+
 static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 {
     cJSON *root = cJSON_Parse(event->data);
@@ -376,6 +383,8 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
     static int floodFlag = 0x0;
     static int doorFlag  = 0x0;
     static int battFlag = 0x0;
+    static int dataFlag = 0;
+    static int cautionFlag = 0;
 
     time(&now);
     if (root != NULL)
@@ -562,9 +571,22 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     ESP_LOGI(log_tag, "Alarm received, state=%d, source=%s, description=%s",
                         alState, getJsonStr(root, "source"), getJsonStr(root, "description"));
                     if (alState)
+                    {
                         dispState(INDICATOR_ALARM, CAUTION);
+                        cautionFlag |= CAUTION_ALARM;
+                    }
                     else
-                        dispState(INDICATOR_OFF, CAUTION);
+                    {
+                        if (cautionFlag & CAUTION_WARN)
+                        {
+                            dispState(INDICATOR_WARN, CAUTION);
+                        }
+                        else
+                        {
+                            dispState(INDICATOR_OFF, CAUTION);
+                        }
+                        cautionFlag &= ~CAUTION_ALARM;
+                    }
                 }
                 break;
 
@@ -637,6 +659,55 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                         }
                     }
                 }
+                if (!strcmp(src,"existence"))
+                {
+                    cJSON *nodatas = cJSON_GetObjectItem(root, "nodata");
+                    cJSON *olddatas = cJSON_GetObjectItem(root, "olddata");
+                    cJSON *nodata = NULL;
+                    cJSON *olddata = NULL;
+                    flagsChanged = true;
+                    cautionFlag &= ~CAUTION_WARN;
+
+                    if (nodatas != NULL)
+                    {
+                        if (cJSON_IsArray(nodatas))
+                        {
+                            if (cJSON_GetArraySize(nodatas))
+                            {
+                                cautionFlag |= CAUTION_WARN;
+                                cJSON_ArrayForEach(nodata, nodatas)
+                                {
+                                    if (cJSON_IsString(nodata))
+                                    {
+                                        ESP_LOGI(log_tag, "no data for %s", nodata->valuestring);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (olddatas != NULL)
+                    {
+                        if (cJSON_IsArray(olddatas))
+                        {
+                            if (cJSON_GetArraySize(olddatas))
+                            {
+                                cautionFlag |= CAUTION_WARN;
+
+                                cJSON_ArrayForEach(olddata, olddatas)
+                                {
+                                    char *name = getJsonStr(olddata, "name");
+                                    int age = 0;
+                                    if (getJsonInt(olddata, "age", &age))
+                                    {
+                                        ESP_LOGI(log_tag, "got old data warn for %s, age is %d seconds", name, age);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (!strcmp(src,"humidity"))
                 {
                     char *name = getJsonStr(root, "name");
@@ -653,6 +724,7 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     flagsChanged = true;
                     floodFlag |= FLOODFLAG_HUMIDITY;
                 }
+
                 break;
 
             default:
@@ -685,6 +757,19 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
         if (doorFlag) dispState(INDICATOR_WARN, DOOR);
         else dispState(INDICATOR_OFF, DOOR);
+
+        if (cautionFlag & CAUTION_ALARM) // if alarmstate is on, dont check is warn state off
+        {
+            dispState(INDICATOR_ALARM, CAUTION);
+        }
+        else if (cautionFlag & CAUTION_WARN)
+        {
+            dispState(INDICATOR_WARN, CAUTION);
+        }
+        if (!cautionFlag)
+        {
+            dispState(INDICATOR_OFF, CAUTION);
+        }
 
         switch (battFlag)
         {
@@ -952,7 +1037,7 @@ void app_main(void)
                 break;
 
                 case CAUTION:
-                    display_icon(meas.data.indic ? INDICATOR_ALARM : INDICATOR_OFF, image_caution, INDEX_CAUTION);
+                    display_icon(meas.data.indic, image_caution, INDEX_CAUTION);
                 break;
 
                 case TIME:
