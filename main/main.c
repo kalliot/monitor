@@ -370,6 +370,27 @@ static int todayNum(void)
     return now_local.tm_wday;
 }
 
+static bool get_arrayIntRec(cJSON *src, char *fieldname, char *valuename)
+{
+    bool ret = false;
+    cJSON *rec = NULL;
+
+    if (cJSON_GetArraySize(src))
+    {
+        ret = true;
+        cJSON_ArrayForEach(rec, src)
+        {
+            char *name = getJsonStr(rec, fieldname);
+            int value = 0;
+            if (getJsonInt(rec, valuename, &value))
+            {
+                ESP_LOGI(log_tag, "got warning for %s, batt value is %d", name, value);
+            }
+        }
+    }
+    return ret;
+}
+
 #define CAUTION_OFF 0
 #define CAUTION_WARN 1
 #define CAUTION_ALARM 2
@@ -383,7 +404,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
     static int floodFlag = 0x0;
     static int doorFlag  = 0x0;
     static int battFlag = 0x0;
-    static int dataFlag = 0;
     static int cautionFlag = 0;
 
     time(&now);
@@ -621,20 +641,8 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     {
                         if (cJSON_IsArray(warnings))
                         {
-                            if (cJSON_GetArraySize(warnings))
-                            {
+                            if  (get_arrayIntRec(warnings, "name", "value"))
                                 battFlag = BATTFLAG_WARN; // if there is at least one item in the array, lit the batt indicator
-
-                                cJSON_ArrayForEach(warning, warnings)
-                                {
-                                    char *name = getJsonStr(warning, "name");
-                                    int battvalue = 0;
-                                    if (getJsonInt(warning, "value",&battvalue))
-                                    {
-                                        ESP_LOGI(log_tag, "got batt warning for %s, batt value is %d", name, battvalue);
-                                    }
-                                }
-                            }
                         }
                     }
 
@@ -642,20 +650,8 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     {
                         if (cJSON_IsArray(alarms))
                         {
-                            if (cJSON_GetArraySize(alarms))
-                            {
+                            if  (get_arrayIntRec(alarm, "name", "value"))
                                 battFlag = BATTFLAG_ALARM; // if there is at least one item in the array, lit the batt indicator
-
-                                cJSON_ArrayForEach(alarm, alarms)
-                                {
-                                    char *name = getJsonStr(alarm, "name");
-                                    int battvalue = 0;
-                                    if (getJsonInt(alarm, "value",&battvalue))
-                                    {
-                                        ESP_LOGI(log_tag, "got batt alarm for %s, batt value is %d", name, battvalue);
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -690,20 +686,8 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     {
                         if (cJSON_IsArray(olddatas))
                         {
-                            if (cJSON_GetArraySize(olddatas))
-                            {
+                            if  (get_arrayIntRec(olddatas, "name", "age"))
                                 cautionFlag |= CAUTION_WARN;
-
-                                cJSON_ArrayForEach(olddata, olddatas)
-                                {
-                                    char *name = getJsonStr(olddata, "name");
-                                    int age = 0;
-                                    if (getJsonInt(olddata, "age", &age))
-                                    {
-                                        ESP_LOGI(log_tag, "got old data warn for %s, age is %d seconds", name, age);
-                                    }
-                                }
-                            }
                         }
                     }
                 }
