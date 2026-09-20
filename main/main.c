@@ -171,8 +171,11 @@ static void on_clock_tick(void* arg)
 
     // current time
     time(&now_utc);
-    localtime_r(&now_utc, &now_local);
-    dispTime(&now_local);
+    if (now_utc > MIN_EPOCH)
+    {
+        localtime_r(&now_utc, &now_local);
+        dispTime(&now_local);
+    }
 }
 
 
@@ -264,7 +267,10 @@ static void dispAvgPrice(float price)
 
     meas.id = AVGPRICE;
     meas.data.price.euros = price;
-    meas.data.price.level = normal;
+    if (price < 0)
+        meas.data.price.level = negative;
+    else
+        meas.data.price.level = normal;
     xQueueSend(evt_queue, &meas, 0);
 }
 
@@ -285,6 +291,36 @@ static void dispLevel(int level)
     meas.data.heater.level = level;
     xQueueSend(evt_queue, &meas, 0);
 }
+
+static void dispSolar(int dailyW)
+{
+    struct measurement meas;
+
+    meas.id = SOLAR;
+    meas.data.solar.dailyWatts = dailyW;
+    xQueueSend(evt_queue, &meas, 0);
+}
+
+static void dispPower(int pow, int avg)
+{
+    struct measurement meas;
+
+    meas.id = POWER;
+    meas.data.power.currPower = pow;
+    meas.data.power.avgPower = avg;
+    xQueueSend(evt_queue, &meas, 0);
+}
+
+static void dispWind(int speed, int direction)
+{
+    struct measurement meas;
+
+    meas.id = WIND;
+    meas.data.wind.speed = speed;
+    meas.data.wind.direction = direction;
+    xQueueSend(evt_queue, &meas, 0);
+}
+
 
 static void dispState(enum indicator state, enum meastype id)
 {
@@ -315,6 +351,9 @@ struct messageId messageIds[] = {
     {hometopic,      NULL,               "alarm",            12},
     {hometopic,      NULL,               "tzoffset",         13},
     {hometopic,      NULL,               "warning",          14},
+    {hometopic,      NULL,               "predailycalc",     15},
+    {hometopic,      NULL,               "elproduction",     16},
+    {hometopic,      NULL,               "weather",          17},
     {zigbeetopic,   "store_door",        NULL,               3},
     {zigbeetopic,   "boiler_door",       NULL,               4},
     {zigbeetopic,   "balkong_door",      NULL,               5},
@@ -550,14 +589,22 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     enum pricelevel level;
                     char stateStr[10];
 
-                    strcpy(stateStr,getJsonStr(root,"pricestate"));
-                    if (!strcmp(stateStr,"low")) level = low;
-                    else if (!strcmp(stateStr,"high")) level = high;
-                    else level = normal;
                     if (getJsonFloat(root,"price",&val))
                     {
+                        if (val < 0)
+                        {
+                            level = negative;
+                        }
+                        else
+                        {
+                            strcpy(stateStr,getJsonStr(root,"pricestate"));
+                            if (!strcmp(stateStr,"low")) level = low;
+                            else if (!strcmp(stateStr,"high")) level = high;
+                            else level = normal;
+                        }
                         dispPrice(val,level);
                     }
+
                 }
                 break;
 
@@ -711,6 +758,52 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
                 break;
 
+            case 15:
+                {
+                    int val=0;
+                    if (getJsonInt(root,"solarW",&val))
+                    {
+                        ESP_LOGI(log_tag, "got predaily solar %d", val);
+                        dispSolar(val);
+                    }
+                }
+                break;
+
+            case 16:
+                {
+                    float curr = 0;
+                    float avg = 0;
+                    int iCurr = 0;
+                    int iAvg = 0;
+                    if (getJsonFloat(root,"power",&curr))
+                    {
+                        getJsonFloat(root,"poweravg",&avg);
+                        iCurr = curr;
+                        iAvg = avg;
+                        dispPower(iCurr, iAvg);
+                    }
+                }
+                break;
+
+            case 17:
+                {
+                    float speed = 0;
+                    float direction = 0;
+                    int iSpeed;
+                    int iDirection;
+
+                    if (getJsonFloat(root,"windspeed",&speed))
+                    {
+                        getJsonFloat(root,"winddir",&direction);
+                        iSpeed = speed / 3.6; // weather service gives km/h
+                        iDirection = direction;
+                        ESP_LOGI(log_tag, "got wind speed %d, direction %d", iSpeed, iDirection);
+                        dispWind(iSpeed, iDirection);
+                    }
+                }
+                break;
+
+
             default:
                 break;
         }
@@ -824,6 +917,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             subscribeTopic(client, hometopic, "relay/+/shelly1/state");
             subscribeTopic(client, hometopic, "elprice/currentquart");
             subscribeTopic(client, hometopic, "elprice/daystats/#");
+            subscribeTopic(client, hometopic, "calculations/predaily");
+            subscribeTopic(client, hometopic, "phase/all/elproduction");
+            subscribeTopic(client, hometopic, "weather/current");
             subscribeTopic(client, hometopic, "+/alarm/#");
             subscribeTopic(client, hometopic, "+/warning/#");
             subscribeTopic(client, hometopic, "tzoffset");
@@ -964,7 +1060,6 @@ void app_main(void)
     dispTemperature(0);
     dispPrice(0,normal);
 
-    on_clock_tick(chipid); // chipid is not used.
 
     esp_mqtt_client_handle_t client = mqtt_app_start(chipid);
     // register periodic timer
@@ -990,6 +1085,14 @@ void app_main(void)
 
                 case LEVEL:
                     display_level(meas.data.heater.level * 20);
+                break;
+
+                case SOLAR:
+                    display_solar(meas.data.solar.dailyWatts);
+                break;
+
+                case POWER:
+                    display_power(meas.data.power.currPower, meas.data.power.avgPower);
                 break;
 
                 case CARHEATER:
@@ -1034,7 +1137,11 @@ void app_main(void)
 
                 case AVGPRICE:
                     display_price(&meas.data.price, 160, 230 );
+                    break;
 
+                case WIND:
+                    display_wind(meas.data.wind.speed, meas.data.wind.direction);
+                break;
             }    
         }
         else

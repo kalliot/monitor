@@ -15,6 +15,7 @@ extern "C" {
 // LCD handle
 static LGFX lcd;
 static int ind_spacing = 10;
+static bool itsNight = false;
 
 /**
  * Draw masked image.
@@ -115,15 +116,15 @@ extern "C" void display_init(void)
 extern "C" void display_static_elements(void)
 {
     const uint32_t main_color = lcd.color888(200, 200, 200);
-    const uint32_t clr = lcd.color888(0xa0, 0x00, 0x00);
+    //const uint32_t clr = lcd.color888(0xa0, 0x00, 0x00);
 
     lcd.startWrite();
     //draw_image(get_image(image_celsius), 50, 250, clr);
     //draw_image(get_image(image_percent), 155, 250, clr);
     //draw_image(get_image(image_mm), 240, 250, clr);
 
-    fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
-    fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
+    //fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
+    //fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
     fill(70, 210, 5, 5, main_color);   // dot between temperature full and remain
     //fill(70, 260, 5, 5, main_color);  // price full and remain.
     lcd.endWrite();
@@ -148,6 +149,12 @@ extern "C" void display_price(struct Price *price, int x, int y)
 
         case high:
             color = lcd.color888(255, 50, 50);
+            break;
+
+        case negative:
+            color = lcd.color888(50, 50, 255);
+            whole = (long) (price->euros * -1);
+            fract = 100 * ((-1 * price->euros) - whole);
             break;
 
         default:
@@ -183,16 +190,118 @@ extern "C" void display_level(unsigned long level)
     lcd.endWrite();
 }   
 
+static void clearBigTimeArea()
+{
+    const uint32_t color = lcd.color888(0, 0, 0);
+    fill(0, 20, DISPLAY_WIDTH, 140, color);
+    return;
+}
+
+static void clearPowerArea()
+{
+    const uint32_t color = lcd.color888(0, 0, 0);
+    fill(0, 80, 175 , 50, color);
+    return;
+}
+
+
+static bool isNight(struct ntpTime *time)
+{
+    if (time->hours > 5 and time->hours < 23) // day
+    {
+        if (itsNight) // night changes to day.
+        {
+            clearBigTimeArea();
+        }
+        itsNight = false;
+        lcd.setBrightness(20);
+    }
+    else
+    {
+        itsNight = true;
+        lcd.setBrightness(3);
+    }
+    return itsNight;
+}
+
+
+extern "C" void display_solar(int dailyW)
+{
+    const uint32_t main_color = lcd.color888(200, 200, 200);
+
+    if (!itsNight)
+    {
+        lcd.startWrite();
+        clearPowerArea();
+        draw_number(get_font(font28), 10, 85, main_color, dailyW, 5);
+        lcd.endWrite();
+    }
+}
+
+extern "C" void display_wind(int speed, int direction)
+{
+    const uint32_t main_color = lcd.color888(200, 200, 200);
+    const uint32_t warn_color = lcd.color888(255, 255, 50);
+
+    if (!itsNight)
+    {
+        lcd.startWrite();
+        clearPowerArea();
+        if (speed > 7)
+        {
+            draw_number(get_font(font28), 10, 85, warn_color, speed, 2);
+            draw_number(get_font(font28), 80, 85, warn_color, direction, 2);
+        }
+        else
+        {
+            draw_number(get_font(font28), 10, 85, main_color, speed, 2);
+            draw_number(get_font(font28), 80, 85, main_color, direction, 3);
+        }
+        lcd.endWrite();
+    }
+}
+
+
+extern "C" void display_power(int current, int average)
+{
+    const uint32_t main_color = lcd.color888(200, 200, 200);
+    const uint32_t pos_color = lcd.color888(50, 255, 50);
+
+    lcd.startWrite();
+    if (current < 0)
+    {
+        draw_number(get_font(font28), 310, 170, main_color, -1 * current, 5);
+    }
+    else
+    {
+        draw_number(get_font(font28), 310, 170, pos_color, current, 5);
+    }
+    lcd.endWrite();
+}
+
+
 extern "C" void display_time(struct ntpTime *time)
 {
     const uint32_t main_color = lcd.color888(200, 200, 200);
 
     lcd.startWrite();
-    draw_number(get_font(font100), 10, 20, main_color, time->hours, 2);
-    draw_number(get_font(font100), 270, 20, main_color, time->minutes, 2);
-    //draw_number(get_font(font60), 350, 190, main_color, time->seconds, 2);
+    if (isNight(time))
+    {
+        fill(DISPLAY_WIDTH / 2 - 10, 50, 20, 20, main_color);
+        fill(DISPLAY_WIDTH / 2 - 10, 100, 20, 20, main_color);
+        draw_number(get_font(font100), 10, 20, main_color, time->hours, 2);
+        draw_number(get_font(font100), 270, 20, main_color, time->minutes, 2);
+    }
+    else
+    {
+        fill(73, 32, 5, 5, main_color);
+        fill(73, 45, 5, 5, main_color);
+        draw_number(get_font(font28), 10, 20, main_color, time->hours, 2);
+        draw_number(get_font(font28), 85, 20, main_color, time->minutes, 2);
+    }
     lcd.endWrite();
 }
+
 
 extern "C" void display_comm(struct commState *state)
 {

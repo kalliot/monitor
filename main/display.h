@@ -22,7 +22,8 @@ enum indicator {
 enum pricelevel {
     low,
     normal,
-    high
+    high,
+    negative
 };
 
 enum meastype
@@ -42,7 +43,10 @@ enum meastype
 
     TIME,
     PRICE,
-    AVGPRICE
+    AVGPRICE,
+    SOLAR,
+    POWER,
+    WIND
 };
 
 struct commState {
@@ -67,6 +71,21 @@ struct Heater {
     int level;
 };
 
+struct PowerConsumption {
+    int currPower;
+    int avgPower;
+};
+
+struct WindForecast {
+    int speed;
+    int direction;
+};
+
+
+struct Solar {
+    int dailyWatts;
+};
+
 
 struct measurement {
     enum meastype id;
@@ -75,6 +94,9 @@ struct measurement {
         struct Heater heater;
         struct ntpTime time;
         struct Price price;
+        struct Solar solar;
+        struct PowerConsumption power;
+        struct WindForecast wind;
         enum indicator indic;
     } data;
 };
@@ -111,6 +133,9 @@ void display_icon(enum indicator state, enum image_type itype, int index);
 void display_temperature(float temperature);
 void display_price(struct Price *price, int x, int y);
 void display_level(unsigned long level);
+void display_solar(int dailyW);
+void display_wind(int speed, int direction);
+void display_power(int current, int average);
 void display_time(struct ntpTime *time);
 void display_comm(struct commState *state);
 void display_static_elements(void);
