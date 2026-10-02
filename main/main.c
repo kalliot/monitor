@@ -37,6 +37,7 @@
 
 #define BATTFLAG_WARN      1
 #define BATTFLAG_ALARM     2
+
 #define DATAFLAG_WARN      1
 #define DATAFLAG_ALARM     2
 
@@ -440,7 +441,8 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
     time_t now;
     bool flagsChanged=false;
     static float avgDayPrice = -10;
-    static int floodFlag = 0x0;
+    static int floodOrigin = 0x0;
+    static int floodFlag = 0;
     static int doorFlag  = 0x0;
     static int battFlag = 0x0;
     static int cautionFlag = 0;
@@ -561,26 +563,26 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
             case 6:
                 flagsChanged = true;
                 if (getJsonState(root,"water_leak"))
-                    floodFlag |= FLOODFLAG_TRASH;
+                    floodOrigin |= FLOODFLAG_TRASH;
                 else
-                    floodFlag &= ~FLOODFLAG_TRASH;
+                    floodOrigin &= ~FLOODFLAG_TRASH;
                 break;
 
             case 7:
                 flagsChanged = true;
                 if (getJsonState(root,"water_leak"))
-                    floodFlag |= FLOODFLAG_LATTIA;
+                    floodOrigin |= FLOODFLAG_LATTIA;
                 else
-                    floodFlag &= ~FLOODFLAG_LATTIA;
+                    floodOrigin &= ~FLOODFLAG_LATTIA;
 
                 break;
 
             case 8:
                 flagsChanged = true;
                 if (getJsonState(root,"water_leak"))
-                    floodFlag |= FLOODFLAG_TISKIKONE;
+                    floodOrigin |= FLOODFLAG_TISKIKONE;
                 else
-                    floodFlag &= ~FLOODFLAG_TISKIKONE;
+                    floodOrigin &= ~FLOODFLAG_TISKIKONE;
                 break;
 
             case 9:
@@ -753,7 +755,7 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                         ESP_LOGI(log_tag, "got humidity deviation is %.2f", deviation);
                     }
                     flagsChanged = true;
-                    floodFlag |= FLOODFLAG_HUMIDITY;
+                    floodOrigin |= FLOODFLAG_HUMIDITY;
                 }
 
                 break;
@@ -820,7 +822,7 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
             if (!memcmp(event->topic, humidityTopic, event->topic_len))
             {
                 ESP_LOGI(log_tag, "topic %s disappeared", humidityTopic);
-                floodFlag &= ~FLOODFLAG_HUMIDITY;
+                floodOrigin &= ~FLOODFLAG_HUMIDITY;
                 flagsChanged = true;
             }
         }
@@ -829,7 +831,8 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
     if (flagsChanged)
     {
-        if (floodFlag) dispState(INDICATOR_ALARM, FLOOD);
+        if (floodOrigin & FLOODFLAG_HUMIDITY) dispState(INDICATOR_WARN, FLOOD);
+        else if (floodOrigin) dispState(INDICATOR_ALARM, FLOOD);
         else dispState(INDICATOR_OFF, FLOOD);
 
         if (doorFlag) dispState(INDICATOR_WARN, DOOR);
@@ -1116,7 +1119,7 @@ void app_main(void)
                 break;
 
                 case FLOOD:
-                    display_icon(meas.data.indic ? INDICATOR_ALARM : INDICATOR_OFF, image_flood, INDEX_FLOOD);
+                    display_icon(meas.data.indic, image_flood, INDEX_FLOOD);
                 break;
 
                 case BATTERY:
