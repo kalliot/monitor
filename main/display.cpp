@@ -190,6 +190,20 @@ extern "C" void display_level(unsigned long level)
     lcd.endWrite();
 }   
 
+extern "C" void display_usedeuros(float euros)
+{
+    const uint32_t color = lcd.color888(200, 200, 200);
+    long whole = (long) euros;
+    long fract = 100 * (euros - whole);
+
+
+    lcd.startWrite();
+    draw_number(get_font(font28), 310, 230, color, whole, 2);
+    draw_number(get_font(font28), 380, 230, color, fract, 2);
+    fill(370, 260, 5, 5, color);
+    lcd.endWrite();
+}
+
 static void clearBigTimeArea()
 {
     const uint32_t color = lcd.color888(0, 0, 0);

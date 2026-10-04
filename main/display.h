@@ -46,7 +46,8 @@ enum meastype
     AVGPRICE,
     SOLAR,
     POWER,
-    WIND
+    WIND,
+    USEDEUROS
 };
 
 struct commState {
@@ -95,6 +96,7 @@ struct measurement {
         struct ntpTime time;
         struct Price price;
         struct Solar solar;
+        float  usedEuros;
         struct PowerConsumption power;
         struct WindForecast wind;
         enum indicator indic;
@@ -134,6 +136,7 @@ void display_temperature(float temperature);
 void display_price(struct Price *price, int x, int y);
 void display_level(unsigned long level);
 void display_solar(int dailyW);
+void display_usedeuros(float euros);
 void display_wind(int speed, int direction);
 void display_power(int current, int average);
 void display_time(struct ntpTime *time);
