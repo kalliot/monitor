@@ -437,6 +437,7 @@ static bool get_arrayIntRec(cJSON *src, char *fieldname, char *valuename)
             }
         }
     }
+    ESP_LOGI(log_tag, "get_arrayIntRec returns %d", ret);
     return ret;
 }
 
@@ -690,8 +691,6 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                 {
                     cJSON *warnings = cJSON_GetObjectItem(root, "warnings");
                     cJSON *alarms = cJSON_GetObjectItem(root, "alarms");
-                    cJSON *warning = NULL;
-                    cJSON *alarm = NULL;
                     battFlag = 0;
                     flagsChanged = true;
 
@@ -708,7 +707,7 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
                     {
                         if (cJSON_IsArray(alarms))
                         {
-                            if  (get_arrayIntRec(alarm, "name", "value"))
+                            if  (get_arrayIntRec(alarms, "name", "value"))
                                 battFlag = BATTFLAG_ALARM; // if there is at least one item in the array, lit the batt indicator
                         }
                     }
@@ -771,24 +770,23 @@ static uint16_t handleJson(esp_mqtt_event_handle_t event, uint8_t *chipid)
 
             case 15:
                 {
-                    int val=0;
-                    float fVal=0;
-                    if (getJsonInt(root,"solarW",&val))
+                    int val = 0;
+                    float fVal = 0;
+                    if (getJsonInt(root,"solarW", &val) && val != 0)
                     {
                         ESP_LOGI(log_tag, "got predaily solar %d", val);
                         dispSolar(val);
-
-                        float usedCents = 0.0;
-                        float producedCents = 0.0;
-                        getJsonFloat(root,"consumedCents",&usedCents);
-                        getJsonFloat(root,"heatOilCents",&fVal);
-                        usedCents += fVal;
-                        fVal = 0.0;
-                        getJsonFloat(root,"creditedCents",&producedCents);
-                        getJsonFloat(root,"soldCents",&fVal);
-                        producedCents += fVal;
-                        dispUsedEuros((usedCents - producedCents) / 100);
                     }
+                    float usedCents = 0.0;
+                    float producedCents = 0.0;
+                    getJsonFloat(root,"consumedCents",&usedCents);
+                    getJsonFloat(root,"heatOilCents",&fVal);
+                    usedCents += fVal;
+                    fVal = 0.0;
+                    getJsonFloat(root,"creditedCents",&producedCents);
+                    getJsonFloat(root,"soldCents",&fVal);
+                    producedCents += fVal;
+                    dispUsedEuros((usedCents - producedCents) / 100);
                 }
                 break;
 
